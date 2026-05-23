@@ -35,7 +35,7 @@ type Video struct {
 	UpdatedAt     time.Time      `json:"updated_at"`
 	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
 
-	User         User           `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	User         User           `json:"user" gorm:"foreignKey:UserID"`
 	Jobs         []Job          `json:"jobs,omitempty"`
 	WatchHistory []WatchHistory `json:"watch_history,omitempty"`
 	Tags         []VideoTag     `json:"tags,omitempty" gorm:"foreignKey:VideoID"`
@@ -51,7 +51,7 @@ type Job struct {
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 
-	Video Video `json:"video,omitempty" gorm:"foreignKey:VideoID"`
+	Video Video `json:"video" gorm:"foreignKey:VideoID"`
 }
 
 type WatchHistory struct {
@@ -61,14 +61,14 @@ type WatchHistory struct {
 	WatchedAt time.Time `json:"watched_at" gorm:"default:now()"`
 	Progress  int       `json:"progress"`
 
-	User  User  `json:"user,omitempty" gorm:"foreignKey:UserID"`
-	Video Video `json:"video,omitempty" gorm:"foreignKey:VideoID"`
+	User  User  `json:"user" gorm:"foreignKey:UserID"`
+	Video Video `json:"video" gorm:"foreignKey:VideoID"`
 }
 
 type VideoTag struct {
 	ID      uuid.UUID `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	VideoID uuid.UUID `json:"video_id" gorm:"type:uuid;not null;index:idx_video_tag,unique"`
 	Tag     string    `json:"tag" gorm:"not null;index;index:idx_video_tag,unique"`
-	
-	Video   Video     `json:"video,omitempty" gorm:"foreignKey:VideoID"`
+
+	Video Video `json:"video" gorm:"foreignKey:VideoID"`
 }
