@@ -31,7 +31,7 @@ func main() {
 	}
 	defer db.Close()
 
-	routes.SetupRoutes(app, logger)
+	routes.SetupRoutes(app, db, cfg, logger)
 
 	server := &http.Server{
 		Addr:    cfg.Port,
