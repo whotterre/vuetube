@@ -12,7 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/whotterre/vuetube/src/internal/config"
 	"github.com/whotterre/vuetube/src/internal/initializers"
-	"github.com/whotterre/vuetube/src/internal/models"
 	"github.com/whotterre/vuetube/src/internal/routes"
 )
 
@@ -30,12 +29,7 @@ func main() {
 	if err != nil {
 		return
 	}
-
-	err = db.AutoMigrate(&models.User{}, &models.Job{}, &models.Video{}, &models.VideoTag{}, &models.WatchHistory{})
-	if err != nil {
-		logger.Error("Failed to run database migrations", "error", err)
-		return
-	}
+	defer db.Close()
 
 	routes.SetupRoutes(app, logger)
 
