@@ -1,112 +1,165 @@
 # VueTube
-A video streaming site built to implement [this](https://blog.kunalgoel.dev/designing-youtube-s-frontend-system-streams-feeds-and-scale?utm_source=hashnode&utm_medium=feed).
-[Database design](./docs/db_diagram.png)
-I built this to understand how / what DASH was after downloading a video from a site that had an m3u8 file with lots of mpd files and to actually use some AWS services I hadn't tried.
+Backend for a YouTube-ish video streaming site, built off [this article](https://blog.kunalgoel.dev/designing-youtube-s-frontend-system-streams-feeds-and-scale?utm_source=hashnode&utm_medium=feed) about how YouTube's frontend is designed.
 
-# Stack 
-Go (Gin) - nice Go http framework
-sqlc - repository layer management 
-PostgreSQL - metadata and user data mgt
-AWS S3 - object storage of videos
-AWS Lambda - thumbnail gen
-ffmpeg - for chunking 
+I started this mostly to figure out what DASH actually was — I'd seen `.m3u8` files and `.mpd` files floating around and wanted to know what was going on. Also an excuse to finally touch some AWS services I'd been avoiding.
 
-## Quickstart
+[DB diagram](./docs/db_diagram.png)
 
-Prerequisites:
-- Go 1.25+
-- PostgreSQL
-- sqlc (optional; used to generate DB code)
+## Stack
+- Go + Gin
+- PostgreSQL (user/video metadata)
+- sqlc (generates the DB layer from raw SQL — really nice)
+- AWS S3 (video + thumbnail storage)
+- ffmpeg / ffprobe (metadata extraction, thumbnail generation)
 
-1. Copy or update environment variables in `src/.env` (example):
+## Getting started
+
+You'll need:
+- Go 1.22+
+- PostgreSQL running somewhere
+- ffmpeg in your PATH (`ffprobe` needs to be findable)
+- sqlc if you're touching the DB queries (`go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`)
+
+**1. Set up your `.env` at `src/.env`:**
 
 ```
-DATABASE_URL=postgres://postgres:password@localhost:5432/xarg
-JWT_SECRET=replace-me-for-prod
+DATABASE_URL=postgres://postgres:password@localhost:5432/vuetube
+JWT_SECRET=something-long-and-random
 PORT=:8000
+AWS_ACCESS_KEY_ID=your-key
+AWS_SECRET_ACCESS_KEY=your-secret
+AWS_REGION=us-east-1
+BUCKET_NAME=your-bucket
 ```
 
-2. Generate sqlc code (if you change queries/schema):
+For the AWS keys — go to IAM, create a user, attach `AmazonS3FullAccess`, generate access keys under Security Credentials.
+
+**2. Apply the schema:**
 
 ```bash
-sqlc generate
+psql $DATABASE_URL -f sql/schema.sql
 ```
 
-3. Build and run the server from the repo root:
-
-```bash
-cd backend
-go build -o src/cmd/cmd.exe ./src/cmd
-./src/cmd/cmd.exe
-```
-
-Or for development you can run:
+**3. Run it:**
 
 ```bash
 go run ./src/cmd
 ```
 
-## Configuration
+Or build:
+```bash
+go build -o src/cmd/cmd.exe ./src/cmd && ./src/cmd/cmd.exe
+```
 
-- `DATABASE_URL`: Postgres connection string.
-- `JWT_SECRET`: secret used to sign session JWTs (defaults to a dev secret if unset).
-- `PORT`: HTTP listen address (default `:8000`).
+If you change any SQL queries or schema, regenerate the DB code:
+```bash
+sqlc generate
+```
+
+## Env vars
+
+| Variable | What it's for | Required? |
+|---|---|---|
+| `DATABASE_URL` | Postgres connection string | yes |
+| `JWT_SECRET` | Signs the JWTs | yes |
+| `PORT` | Which port to listen on | no (default `:8000`) |
+| `AWS_ACCESS_KEY_ID` | AWS creds | for uploads |
+| `AWS_SECRET_ACCESS_KEY` | AWS creds | for uploads |
+| `AWS_REGION` | Region your S3 bucket is in | for uploads |
+| `BUCKET_NAME` | S3 bucket for videos + thumbnails | for uploads |
 
 ## Endpoints
 
-The project exposes a small set of endpoints used for health checks and auth during development.
+### No auth needed
 
-- **GET /health**
-	- Description: simple health check
-	- Response: 200 JSON `{ "message": "Hello" }`
+**GET /health** — just returns `{ "message": "Hello" }`. Useful for checking the server's up.
 
-- **POST /auth/login**
-	- Description: authenticate a user and return a JWT
-	- Request JSON:
-
+**POST /auth/signup**
 ```json
 {
-	"email": "user@example.com",
-	"password": "plaintext-password"
+  "first_name": "Alice",
+  "last_name": "Smith",
+  "email": "alice@example.com",
+  "password": "plaintext-password"
+}
+```
+Returns a JWT on success (201).
+
+**POST /auth/login**
+```json
+{
+  "email": "alice@example.com",
+  "password": "plaintext-password"
+}
+```
+Returns a JWT on success (200).
+
+### Auth required (`Authorization: Bearer <token>`)
+
+**POST /videos/upload** — `multipart/form-data`
+
+Fields:
+- `video_file` — the actual video (up to 500 MB)
+- `title` — required
+
+What it does behind the scenes: runs ffprobe to get duration + resolution, uploads the video to S3, extracts a thumbnail from the second frame with ffmpeg, uploads that too, then saves everything to the DB.
+
+Response (200):
+```json
+{
+  "ID": "a533793a-acaf-465a-90e6-fc1700ac743d",
+  "Name": "my-video.mp4",
+  "S3Url": "https://<bucket>.s3.<region>.amazonaws.com/<hash>",
+  "ThumbnailUrl": "https://<bucket>.s3.<region>.amazonaws.com/thumb-<hash>",
+  "Duration": 16,
+  "Resolution": "1080p",
+  "Size": 6374470,
+  "Progress": 0,
+  "ViewCount": 0,
+  "Owner": "<user-uuid>",
+  "UploadedAt": "2026-05-28T21:19:00Z",
+  "UpdatedAt": "2026-05-28T21:19:00Z"
 }
 ```
 
-	- Response JSON (200):
+![Upload response](./docs/slow_upload_ep.png)
 
-```json
-{
-	"message": "Successfully logged in",
-	"token": "<jwt>",
-	"email": "user@example.com"
-}
+## How the upload works
+
+```
+POST /videos/upload
+  → RequireAuth middleware     validates JWT, sticks claims in Gin context
+  → VideoHandler               checks file size, required fields
+  → VideoService
+      ├── ExtractMetadata      ffprobe on a temp file → duration + resolution
+      ├── S3 upload            video goes up
+      ├── ExtractThumbnail     ffmpeg grabs second frame → temp JPEG
+      ├── S3 upload            thumbnail goes up (non-fatal if this fails)
+      └── CreateVideo          record saved to postgres
 ```
 
-- **POST /auth/signup**
-	- Description: create a new account and return a JWT
-	- Request JSON:
+Layer rules I tried to stick to:
+- Handlers deal with HTTP only — no business logic
+- Services do the work — they never touch `ctx.JSON` or write responses
+- Repositories are just DB access via sqlc
+- Middleware handles cross-cutting stuff (auth puts JWT claims in context under `"claims"`)
 
-```json
-{
-	"first_name": "Alice",
-	"last_name": "Smith",
-	"email": "alice@example.com",
-	"password": "plaintext-password"
-}
+S3 keys are `md5(filename)` for videos and `thumb-md5(filename)` for thumbnails — deterministic, so re-uploading the same filename just overwrites.
+
+## Known issues
+
+### It's slow
+
+Uploading a 6.7 MB file took ~25 seconds. The whole pipeline is synchronous — every step blocks until the previous one finishes:
+
+```
+receive → temp file → ffprobe × 2 → S3 upload → temp file → ffmpeg → S3 upload → postgres → respond
 ```
 
-	- Response JSON (201):
+The obvious fix is to accept the file, immediately return a job ID, and do all the heavy lifting in the background. The `progress` field on the video record exists for exactly this — the plan is to use [hibiken/asynq](https://github.com/hibiken/asynq) for the job queue so the client can poll status.
 
-```json
-{
-	"message": "Successfully signed up",
-	"token": "<jwt>",
-	"email": "alice@example.com",
-	"firstName": "Alice"
-}
-```
+## Misc
 
-## Notes & Next Steps
-
-- This repo is mid-transition to `sqlc` for the repository layer. The generated code lives under `backend/src/internal/db/sqlc`.
-- Authentication uses JWTs signed with `JWT_SECRET`. For production, set a strong secret and rotate as needed.
-- Database migrations are not automated here — apply `backend/sql/schema.sql` to your database or integrate a migration tool.
+- No automated migrations — just run `sql/schema.sql` manually against your DB
+- The `sqlc` generated code is at `src/internal/db/sqlc` — don't edit it directly, change the SQL files and re-run `sqlc generate`
+- JWT auth is required for video upload — the owner UUID is pulled directly from the token claims, so there's no way to upload anonymously
