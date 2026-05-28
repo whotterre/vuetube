@@ -1,5 +1,6 @@
 # VueTube
 A video streaming site built to implement [this](https://blog.kunalgoel.dev/designing-youtube-s-frontend-system-streams-feeds-and-scale?utm_source=hashnode&utm_medium=feed).
+[Database design](./docs/db_diagram.png)
 I built this to understand how / what DASH was after downloading a video from a site that had an m3u8 file with lots of mpd files and to actually use some AWS services I hadn't tried.
 
 # Stack 
