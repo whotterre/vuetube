@@ -20,6 +20,7 @@ type Config struct {
 	AWSSecretAccessKey string `mapstructure:"AWS_SECRET_ACCESS_KEY"`
 	AWSRegion          string `mapstructure:"AWS_REGION"`
 	BucketName         string `mapstructure:"BUCKET_NAME"`
+	RedisAddr          string `mapstructure:"REDIS_ADDR"`
 }
 
 
@@ -77,6 +78,11 @@ func LoadConfig() (*Config, error) {
 
 
 
+	redisAddr := viper.GetString("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
 	return &Config{
 		Port:               port,
 		DatabaseURL:        dbURL,
@@ -85,11 +91,10 @@ func LoadConfig() (*Config, error) {
 		AWSSecretAccessKey: viper.GetString("AWS_SECRET_ACCESS_KEY"),
 		BucketName:         viper.GetString("BUCKET_NAME"),
 		AWSRegion:          viper.GetString("AWS_REGION"),
+		RedisAddr:          redisAddr,
 	}, nil
 }
 
-// LoadAWSConfig loads an AWS SDK v2 config using environment, shared creds,
-// and the optional AWS_REGION from viper if set.
 func LoadAWSConfig(ctx context.Context) (aws.Config, error) {
 	region := viper.GetString("AWS_REGION")
 	if region != "" {

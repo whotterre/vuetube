@@ -14,14 +14,14 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS "videos" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "name" varchar NOT NULL,
-  "s3_url" varchar NOT NULL,
-  "thumbnail_url" varchar NOT NULL,
-  "duration" int NOT NULL,
-  "resolution" varchar NOT NULL,
+  "s3_url" varchar NOT NULL DEFAULT '',
+  "thumbnail_url" varchar NOT NULL DEFAULT '',
+  "duration" int NOT NULL DEFAULT 0,
+  "resolution" varchar NOT NULL DEFAULT '',
   "size" int NOT NULL,
-  "progress" int DEFAULT 0,
+  "progress" int NOT NULL DEFAULT 0,
   "view_count" int NOT NULL DEFAULT 0,
   "owner" uuid REFERENCES users(id),
   "uploaded_at" timestamp NOT NULL DEFAULT (now()),
   "updated_at" timestamp NOT NULL DEFAULT (now())
-);
+);
