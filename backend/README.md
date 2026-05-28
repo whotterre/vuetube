@@ -158,6 +158,9 @@ receive → temp file → ffprobe × 2 → S3 upload → temp file → ffmpeg �
 
 The obvious fix is to accept the file, immediately return a job ID, and do all the heavy lifting in the background. The `progress` field on the video record exists for exactly this — the plan is to use [hibiken/asynq](https://github.com/hibiken/asynq) for the job queue so the client can poll status.
 
+On switching to an async workflow, I was able to realize a response time ~200x faster than the previous.
+![Upload response after asynq](./docs/upload_after_asynq.png)
+
 ## Misc
 
 - No automated migrations — just run `sql/schema.sql` manually against your DB

@@ -26,7 +26,7 @@ type Video struct {
 	Duration     int32
 	Resolution   string
 	Size         int32
-	Progress     pgtype.Int4
+	Progress     int32
 	ViewCount    int32
 	Owner        pgtype.UUID
 	UploadedAt   pgtype.Timestamp

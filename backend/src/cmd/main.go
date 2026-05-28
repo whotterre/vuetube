@@ -10,9 +10,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"github.com/whotterre/vuetube/src/internal/config"
 	"github.com/whotterre/vuetube/src/internal/initializers"
+	"github.com/whotterre/vuetube/src/internal/repositories"
 	"github.com/whotterre/vuetube/src/internal/routes"
+	"github.com/whotterre/vuetube/src/internal/tasks"
+	"github.com/whotterre/vuetube/src/internal/utils"
+	"github.com/whotterre/vuetube/src/internal/workers"
 )
 
 func main() {
@@ -31,7 +36,33 @@ func main() {
 	}
 	defer db.Close()
 
-	routes.SetupRoutes(app, db, cfg, logger)
+	redisOpt := asynq.RedisClientOpt{Addr: cfg.RedisAddr}
+
+	asynqClient := asynq.NewClient(redisOpt)
+	defer asynqClient.Close()
+
+	asynqServer := asynq.NewServer(redisOpt, asynq.Config{
+		Concurrency: 5,
+		Queues:      map[string]int{"default": 1},
+	})
+
+	// Register task handlers
+	mux := asynq.NewServeMux()
+	s3Helper := utils.NewS3Helper(context.Background())
+	videoRepo := repositories.NewVideoRepository(db)
+	videoProcessor := workers.NewVideoProcessor(videoRepo, s3Helper, workers.VideoProcessorConfig{
+		BucketName: cfg.BucketName,
+		AWSRegion:  cfg.AWSRegion,
+	})
+	mux.HandleFunc(tasks.TypeVideoUpload, videoProcessor.HandleVideoUploadTask)
+
+	go func() {
+		if err := asynqServer.Run(mux); err != nil {
+			logger.Error("asynq worker server failed", "error", err)
+		}
+	}()
+
+	routes.SetupRoutes(app, db, cfg, logger, asynqClient)
 
 	server := &http.Server{
 		Addr:    cfg.Port,
@@ -55,6 +86,7 @@ func main() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
+		asynqServer.Shutdown()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.Error("Failed to shut down server", "error", err)
 		}
