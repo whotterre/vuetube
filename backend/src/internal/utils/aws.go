@@ -3,8 +3,8 @@ package utils
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -26,30 +26,23 @@ func NewS3Helper(ctx context.Context) *S3Helper {
 	return &S3Helper{S3Client: client}
 }
 
-// UploadFile reads from a file and puts the data into an object in an S3 bucket.
+// UploadFile uploads data from a reader into an S3 bucket object.
 func (h *S3Helper) UploadFile(ctx context.Context,
 	bucketName string,
 	objectKey string,
-	fileName string) (*s3.PutObjectOutput, error) {
-	file, err := os.Open(fileName)
-	if err != nil {
-		log.Printf("Couldn't open file %v to upload. Here's why: %v\n", fileName, err)
-		return nil, err
-	}
-	defer file.Close()
-
+	body io.Reader) (*s3.PutObjectOutput, error) {
 	uploadedVideoDetails, err := h.S3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectKey),
-		Body:   file,
+		Body:   body,
 	})
 	if err != nil {
 		var apiErr smithy.APIError
 		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "EntityTooLarge" {
 			log.Printf("S3 upload failed: object exceeds service limit (file should be validated at handler layer, max 500MB)\n")
 		} else {
-			log.Printf("Couldn't upload file %v to %v:%v. Here's why: %v\n",
-				fileName, bucketName, objectKey, err)
+			log.Printf("Couldn't upload object %v to %v. Here's why: %v\n",
+				objectKey, bucketName, err)
 		}
 		return nil, err
 	}

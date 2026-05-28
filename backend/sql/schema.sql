@@ -1,12 +1,27 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS users (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    email text NOT NULL UNIQUE,
-    first_name text NOT NULL,
-    last_name text NOT NULL,
-    password text NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    deleted_at timestamptz
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "email" text NOT NULL UNIQUE,
+    "first_name" text NOT NULL,
+    "last_name" text NOT NULL,
+    "password" text NOT NULL,
+    "created_at" timestamptz NOT NULL DEFAULT now(),
+    "updated_at" timestamptz NOT NULL DEFAULT now(),
+    "deleted_at" timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS "videos" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "name" varchar NOT NULL,
+  "s3_url" varchar NOT NULL,
+  "thumbnail_url" varchar NOT NULL,
+  "duration" int NOT NULL,
+  "resolution" varchar NOT NULL,
+  "size" int NOT NULL,
+  "progress" int DEFAULT 0,
+  "view_count" int NOT NULL DEFAULT 0,
+  "owner" uuid REFERENCES users(id),
+  "uploaded_at" timestamp NOT NULL DEFAULT (now()),
+  "updated_at" timestamp NOT NULL DEFAULT (now())
 );

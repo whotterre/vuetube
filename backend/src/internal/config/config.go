@@ -1,19 +1,27 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"log"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/spf13/viper"
 	"github.com/subosito/gotenv"
 )
 
 type Config struct {
-	Port        string `mapstructure:"PORT"`
-	DatabaseURL string `mapstructure:"DATABASE_URL"`
-	JWTSecret   string `mapstructure:"JWT_SECRET"`
+	Port               string `mapstructure:"PORT"`
+	DatabaseURL        string `mapstructure:"DATABASE_URL"`
+	JWTSecret          string `mapstructure:"JWT_SECRET"`
+	AWSAccessKey       string `mapstructure:"AWS_ACCESS_KEY_ID"`
+	AWSSecretAccessKey string `mapstructure:"AWS_SECRET_ACCESS_KEY"`
+	AWSRegion          string `mapstructure:"AWS_REGION"`
+	BucketName         string `mapstructure:"BUCKET_NAME"`
 }
+
 
 func LoadConfig() (*Config, error) {
 	// Try several likely .env file locations relative to the process cwd so
@@ -63,13 +71,29 @@ func LoadConfig() (*Config, error) {
 
 	jwtSecret := viper.GetString("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "dev-secret-change-in-production"
 		log.Println("config: JWT_SECRET not set, using default dev secret")
+		return nil, errors.New("JWT_SECRET not set")
 	}
 
+
+
 	return &Config{
-		Port:        port,
-		DatabaseURL: dbURL,
-		JWTSecret:   jwtSecret,
+		Port:               port,
+		DatabaseURL:        dbURL,
+		JWTSecret:          jwtSecret,
+		AWSAccessKey:       viper.GetString("AWS_ACCESS_KEY_ID"),
+		AWSSecretAccessKey: viper.GetString("AWS_SECRET_ACCESS_KEY"),
+		BucketName:         viper.GetString("BUCKET_NAME"),
+		AWSRegion:          viper.GetString("AWS_REGION"),
 	}, nil
+}
+
+// LoadAWSConfig loads an AWS SDK v2 config using environment, shared creds,
+// and the optional AWS_REGION from viper if set.
+func LoadAWSConfig(ctx context.Context) (aws.Config, error) {
+	region := viper.GetString("AWS_REGION")
+	if region != "" {
+		return awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(region))
+	}
+	return awscfg.LoadDefaultConfig(ctx)
 }

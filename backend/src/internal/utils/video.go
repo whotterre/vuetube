@@ -35,10 +35,10 @@ func ExtractMetadata(ctx context.Context, reader io.Reader) (*VideoMetadata, err
 		// Get duration
 		durCmd := exec.Command("ffprobe", "-v", "error", "-show_entries",
 			"format=duration", "-of",
-			"default=noprint_wrappers=1:nokey=1:sk=1", tmpFile.Name())
-		durOut, err := durCmd.Output()
+			"default=noprint_wrappers=1:nokey=1", tmpFile.Name())
+		durOut, err := durCmd.CombinedOutput()
 		if err != nil {
-			return nil, fmt.Errorf("ffprobe duration failed: %w", err)
+			return nil, fmt.Errorf("ffprobe duration failed: %w\noutput: %s", err, durOut)
 		}
 		duration, _ := strconv.ParseFloat(strings.TrimSpace(string(durOut)), 64)
 
@@ -46,9 +46,9 @@ func ExtractMetadata(ctx context.Context, reader io.Reader) (*VideoMetadata, err
 		resCmd := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
 			"-show_entries", "stream=width,height", "-of",
 			"csv=s=x:p=0", tmpFile.Name())
-		resOut, err := resCmd.Output()
+		resOut, err := resCmd.CombinedOutput()
 		if err != nil {
-			return nil, fmt.Errorf("ffprobe resolution failed: %w", err)
+			return nil, fmt.Errorf("ffprobe resolution failed: %w\noutput: %s", err, resOut)
 		}
 
 		parts := strings.Split(strings.TrimSpace(string(resOut)), "x")
@@ -100,7 +100,6 @@ func ExtractThumbnail(ctx context.Context, reader io.Reader) (string, error) {
 		}
 		tmpIn.Close()
 
-		// Create the output JPEG temp file
 		tmpOut, err := os.CreateTemp("", "thumb-*.jpg")
 		if err != nil {
 			return "", fmt.Errorf("failed to create thumbnail temp file: %w", err)

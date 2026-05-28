@@ -17,3 +17,18 @@ type User struct {
 	UpdatedAt time.Time
 	DeletedAt pgtype.Timestamptz
 }
+
+type Video struct {
+	ID           uuid.UUID
+	Name         string
+	S3Url        string
+	ThumbnailUrl string
+	Duration     int32
+	Resolution   string
+	Size         int32
+	Progress     pgtype.Int4
+	ViewCount    int32
+	Owner        pgtype.UUID
+	UploadedAt   pgtype.Timestamp
+	UpdatedAt    pgtype.Timestamp
+}
