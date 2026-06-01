@@ -55,3 +55,19 @@ func (h *S3Helper) UploadFile(ctx context.Context,
 
 	return uploadedVideoDetails, nil
 }
+
+func (h *S3Helper) ObjectExists(ctx context.Context, bucketName string, objectKey string) (bool, error) {
+	_, err := h.S3Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NotFound" {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
