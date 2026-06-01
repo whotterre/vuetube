@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"fmt"
 	"mime/multipart"
 	"os"
@@ -61,7 +60,6 @@ func (s *videoService) UploadVideo(ctx *gin.Context,
 	}
 	tmpFile.Close()
 
-	// Create a pending DB record — worker fills in the rest
 	video, err := s.videoRepository.CreateVideo(ctx, db.CreateVideoParams{
 		Name:  videoFileName,
 		Size:  int32(videoSize),
@@ -72,7 +70,6 @@ func (s *videoService) UploadVideo(ctx *gin.Context,
 		return nil, fmt.Errorf("failed to create video record: %w", err)
 	}
 
-	// Enqueue the processing job
 	task, err := tasks.NewVideoUploadTask(video.ID.String(), tmpFile.Name(), videoFileName)
 	if err != nil {
 		os.Remove(tmpFile.Name())
@@ -108,7 +105,3 @@ func copyFile(src multipart.File, dst *os.File) (int64, error) {
 	return written, nil
 }
 
-// contextFromGin extracts the standard context from a gin context.
-func contextFromGin(ctx *gin.Context) context.Context {
-	return ctx.Request.Context()
-}
