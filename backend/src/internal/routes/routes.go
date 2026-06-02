@@ -14,6 +14,7 @@ import (
 	"github.com/whotterre/vuetube/src/internal/services"
 	"github.com/whotterre/vuetube/src/internal/utils"
 	"github.com/whotterre/vuetube/src/internal/workers"
+	"golang.org/x/time/rate"
 )
 
 func SetupRoutes(app *gin.Engine, db *pgxpool.Pool, cfg *config.Config, logger *slog.Logger, asynqClient *asynq.Client) {
@@ -25,7 +26,9 @@ func SetupRoutes(app *gin.Engine, db *pgxpool.Pool, cfg *config.Config, logger *
 		ctx.JSON(200, gin.H{"message": "Hello"})
 	})
 
-	authRoutes := app.Group("/auth")
+	authLimiter := rate.NewLimiter(rate.Limit(5), 1)
+
+	authRoutes := app.Group("/auth", middleware.RateLimitMiddleware(authLimiter))
 	authRoutes.POST("/login", authHandler.Login)
 	authRoutes.POST("/signup", authHandler.Signup)
 
@@ -41,5 +44,7 @@ func SetupRoutes(app *gin.Engine, db *pgxpool.Pool, cfg *config.Config, logger *
 
 	videoRoutes := app.Group("/videos", middleware.RequireAuth(cfg.JWTSecret))
 	videoRoutes.POST("/upload", videoHandler.UploadVideo)
-	videoRoutes.PATCH("/:id/like", videoHandler.ToggleVideoLike) // TODO: Add rate limiting here
+
+	likeLimiter := rate.NewLimiter(rate.Limit(5), 1)
+	videoRoutes.PATCH("/:id/like", middleware.RateLimitMiddleware(likeLimiter), videoHandler.ToggleVideoLike)
 }
