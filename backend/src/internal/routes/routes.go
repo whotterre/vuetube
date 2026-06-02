@@ -41,4 +41,5 @@ func SetupRoutes(app *gin.Engine, db *pgxpool.Pool, cfg *config.Config, logger *
 
 	videoRoutes := app.Group("/videos", middleware.RequireAuth(cfg.JWTSecret))
 	videoRoutes.POST("/upload", videoHandler.UploadVideo)
+	videoRoutes.PATCH("/:id/like", videoHandler.ToggleVideoLike) // TODO: Add rate limiting here
 }

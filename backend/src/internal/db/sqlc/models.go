@@ -32,3 +32,9 @@ type Video struct {
 	UploadedAt   pgtype.Timestamp
 	UpdatedAt    pgtype.Timestamp
 }
+
+type VideoLike struct {
+	VideoID   uuid.UUID
+	UserID    uuid.UUID
+	CreatedAt pgtype.Timestamptz
+}

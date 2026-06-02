@@ -24,4 +24,11 @@ CREATE TABLE IF NOT EXISTS "videos" (
   "owner" uuid REFERENCES users(id),
   "uploaded_at" timestamp NOT NULL DEFAULT (now()),
   "updated_at" timestamp NOT NULL DEFAULT (now())
-);
+);
+
+CREATE TABLE IF NOT EXISTS "video_likes" (
+  video_id   UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  user_id    UUID NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now(),
+  PRIMARY KEY (video_id, user_id)
+);
