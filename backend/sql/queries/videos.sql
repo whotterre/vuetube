@@ -14,3 +14,22 @@ SET
   updated_at   = now()
 WHERE id = $1
 RETURNING *;
+
+
+-- name: DeleteVideoLike :exec
+DELETE FROM video_likes
+WHERE video_id = $1 AND user_id = $2;
+
+-- name: InsertVideoLike :exec
+INSERT INTO video_likes (video_id, user_id)
+VALUES ($1, $2);
+
+-- name: FindVideoByVideoId :one
+SELECT * FROM videos WHERE id = $1;
+
+-- name: CheckUserLikedVideo :one
+SELECT * FROM video_likes WHERE video_id = $1 AND user_id = $2;
+
+-- name: CountVideoLikes :one
+SELECT COUNT(*) FROM video_likes WHERE video_id = $1;
+

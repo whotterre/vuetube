@@ -1,11 +1,13 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"mime/multipart"
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/whotterre/vuetube/src/internal/config"
@@ -25,6 +27,7 @@ type VideoService interface {
 		videoFileName string,
 		videoSize int64,
 	) (*db.Video, error)
+	ToggleLikeVideo(ctx context.Context, videoID, userID uuid.UUID) (bool, int64, error)
 }
 
 type videoService struct {
@@ -105,3 +108,10 @@ func copyFile(src multipart.File, dst *os.File) (int64, error) {
 	return written, nil
 }
 
+func (s *videoService) ToggleLikeVideo(ctx context.Context, videoID, userID uuid.UUID) (bool, int64, error) {
+	if _, err := s.videoRepository.FindVideoByVideoID(ctx, videoID); err != nil {
+		return false, 0, fmt.Errorf("video not found: %w", err)
+	}
+
+	return s.videoRepository.ToggleLikeTx(ctx, userID, videoID)
+}
