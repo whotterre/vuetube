@@ -55,3 +55,10 @@ UNION ALL
   LIMIT $2
 )
 LIMIT $2;
+
+-- name: GetGenericFeed :many
+SELECT * FROM videos
+WHERE progress > 0
+ORDER BY view_count DESC, uploaded_at DESC
+LIMIT $1;
+

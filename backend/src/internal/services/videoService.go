@@ -29,6 +29,7 @@ type VideoService interface {
 	) (*db.Video, error)
 	ToggleLikeVideo(ctx context.Context, videoID, userID uuid.UUID) (bool, int64, error)
 	GetRecommendationFeed(ctx context.Context, limit int, videoId uuid.UUID) ([]db.GetCrossPoolRecommendationsRow, error)
+	GetGenericFeed(ctx context.Context, limit int) ([]db.Video, error)
 }
 
 type videoService struct {
@@ -132,4 +133,12 @@ func (s *videoService) GetRecommendationFeed(ctx context.Context, limit int, vid
 	}
 
 	return feed, nil
+}
+
+func (s *videoService) GetGenericFeed(ctx context.Context, limit int) ([]db.Video, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+
+	return s.videoRepository.GetGenericFeed(ctx, limit)
 }

@@ -19,6 +19,7 @@ type VideoHandler interface {
 	UploadVideo(ctx *gin.Context)
 	ToggleVideoLike(ctx *gin.Context)
 	GetRecommendationFeed(ctx *gin.Context)
+	GetGenericFeed(ctx *gin.Context)
 }
 
 type videoHandler struct {
@@ -132,3 +133,27 @@ func (h *videoHandler) GetRecommendationFeed(ctx *gin.Context) {
 		"recommendations": recommendations,
 	})
 }
+
+func (h *videoHandler) GetGenericFeed(ctx *gin.Context) {
+	limit := 20
+	if limStr := ctx.Query("limit"); limStr != "" {
+		parsed, err := strconv.Atoi(limStr)
+		if err != nil || parsed <= 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit must be a positive integer"})
+			return
+		}
+		limit = parsed
+	}
+
+	feed, err := h.videoService.GetGenericFeed(ctx.Request.Context(), limit)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "generic feed fetched successfully",
+		"feed":    feed,
+	})
+}
+
