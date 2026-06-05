@@ -33,3 +33,9 @@ CREATE TABLE IF NOT EXISTS "video_likes" (
   created_at timestamptz DEFAULT now(),
   PRIMARY KEY (video_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS "video_category" (
+  video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  category_tag varchar(255) NOT NULL,
+  PRIMARY KEY (video_id, category_tag)
+);

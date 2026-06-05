@@ -33,3 +33,25 @@ SELECT * FROM video_likes WHERE video_id = $1 AND user_id = $2;
 -- name: CountVideoLikes :one
 SELECT COUNT(*) FROM video_likes WHERE video_id = $1;
 
+-- name: GetCrossPoolRecommendations :many
+WITH cross_pool AS (
+  SELECT v.* FROM videos v
+  WHERE v.id != $1
+    AND v.progress > 0
+    AND v.id NOT IN (
+      SELECT video_id FROM video_category
+      WHERE category_tag = ANY(SELECT category_tag FROM video_category WHERE video_id = $1)
+    )
+  ORDER BY v.view_count DESC, v.uploaded_at DESC
+  LIMIT $2
+)
+SELECT * FROM cross_pool
+UNION ALL
+(
+  SELECT v.* FROM videos v
+  WHERE v.id != $1
+    AND NOT EXISTS (SELECT 1 FROM cross_pool)
+  ORDER BY RANDOM()
+  LIMIT $2
+)
+LIMIT $2;
