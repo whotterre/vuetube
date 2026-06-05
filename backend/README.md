@@ -58,15 +58,15 @@ sqlc generate
 
 ## Env vars
 
-| Variable | What it's for | Required? |
-|---|---|---|
-| `DATABASE_URL` | Postgres connection string | yes |
-| `JWT_SECRET` | Signs the JWTs | yes |
-| `PORT` | Which port to listen on | no (default `:8000`) |
-| `AWS_ACCESS_KEY_ID` | AWS creds | for uploads |
-| `AWS_SECRET_ACCESS_KEY` | AWS creds | for uploads |
-| `AWS_REGION` | Region your S3 bucket is in | for uploads |
-| `BUCKET_NAME` | S3 bucket for videos + thumbnails | for uploads |
+| Variable               | What it's for                     | Required?            |
+|------------------------|-----------------------------------|----------------------|
+| `DATABASE_URL`         | Postgres connection string        | yes                  |
+| `JWT_SECRET`           | Signs the JWTs                    | yes                  |
+| `PORT`                 | Which port to listen on           | no (default `:8000`) |
+| `AWS_ACCESS_KEY_ID`    | AWS creds                         | for uploads          |
+| `AWS_SECRET_ACCESS_KEY`| AWS creds                         | for uploads          |
+| `AWS_REGION`           | Region your S3 bucket is in       | for uploads          |
+| `BUCKET_NAME`          | S3 bucket for videos + thumbnails | for uploads          |
 
 ## Endpoints
 
@@ -234,9 +234,37 @@ The `NOT EXISTS (SELECT 1 FROM cross_pool)` guard means the fallback branch only
 
 ### Cold start
 
-New users launching the app for the first time have no seed video. A separate endpoint handles this:
+New users launching the app for the first time have no seed video. A separate endpoint handles this — it returns the most popular and freshest content globally, with no personalisation.
 
-**GET /videos/feed** — no `:id` param, returns a generic popular/fresh feed ordered by `view_count DESC, uploaded_at DESC`.
+**GET /videos/feed?limit=20**
+
+No `:id` param. Rate limited to 10 req/s. `limit` defaults to 20, capped at 50.
+
+Response (200):
+```json
+{
+  "message": "generic feed fetched successfully",
+  "feed": [
+    {
+      "ID": "...",
+      "Name": "some-video.mp4",
+      "ViewCount": 1042,
+      ...
+    }
+  ]
+}
+```
+
+Query used:
+```sql
+SELECT * FROM videos
+WHERE progress > 0
+ORDER BY view_count DESC, uploaded_at DESC
+LIMIT $1;
+```
+
+Once the user watches or likes a video, switch to `GET /videos/feed/:id` to get personalised recommendations seeded from that video.
+
 
 ### Tagging videos
 
@@ -251,13 +279,13 @@ VALUES ('<video-uuid>', 'gaming');
 
 Benchmarked with `EXPLAIN (ANALYZE, BUFFERS)` on a dev dataset (14 rows):
 
-| Metric | Value |
-|---|---|
-| Execution time | 0.185 ms |
-| Planning time | 0.657 ms |
-| Buffer hits | 12 (all from cache, zero disk I/O) |
-| Tag lookup | Index Only Scan on `video_category_pkey` |
-| Fallback path | Correctly skipped (`never executed`) |
+| Metric         | Value                                    |
+|----------------|------------------------------------------|
+| Execution time | 0.185 ms                                 |
+| Planning time  | 0.657 ms                                 |
+| Buffer hits    | 12 (all from cache, zero disk I/O)       |
+| Tag lookup     | Index Only Scan on `video_category_pkey` |
+| Fallback path  | Correctly skipped (`never executed`)     |
 
 The `Seq Scan on videos` is expected and optimal at small scale — the planner switches to an index scan once the table grows. When you have thousands of videos, add:
 
