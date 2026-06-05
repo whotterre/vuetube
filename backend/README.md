@@ -166,3 +166,108 @@ On switching to an async workflow, I was able to realize a response time ~200x f
 - No automated migrations — just run `sql/schema.sql` manually against your DB
 - The `sqlc` generated code is at `src/internal/db/sqlc` — don't edit it directly, change the SQL files and re-run `sqlc generate`
 - JWT auth is required for video upload — the owner UUID is pulled directly from the token claims, so there's no way to upload anonymously
+
+## Recommendation Feed
+
+**GET /videos/feed/:id?limit=20** — returns a ranked list of videos recommended based on a seed video the user just watched or liked.
+
+Rate limited to 10 req/s. `limit` defaults to 20, capped at 50.
+
+Response (200):
+```json
+{
+  "message": "recommendation feed fetched successfully",
+  "recommendations": [
+    {
+      "ID": "...",
+      "Name": "some-video.mp4",
+      "ViewCount": 1042,
+      ...
+    }
+  ]
+}
+```
+
+### How it works
+
+Videos are tagged via the `video_category` table — a join table between `videos` and a `category_tag` string. One video can have multiple tags.
+
+The feed is built from two pools:
+
+```
+Seed video
+  ├── Pool A — same tag set, ordered by views + recency     (~60% of results)
+  └── Pool B — different tags / no overlap, serendipitous   (~40% of results)
+```
+
+This is implemented as a single CTE query with a `UNION ALL` fallback:
+
+```sql
+WITH cross_pool AS (
+  -- Pool A: different-category videos, ordered by engagement
+  SELECT v.* FROM videos v
+  WHERE v.id != $1
+    AND v.progress > 0
+    AND v.id NOT IN (
+      SELECT video_id FROM video_category
+      WHERE category_tag = ANY(
+        SELECT category_tag FROM video_category WHERE video_id = $1
+      )
+    )
+  ORDER BY v.view_count DESC, v.uploaded_at DESC
+  LIMIT $2
+)
+SELECT * FROM cross_pool
+UNION ALL
+(
+  -- Pool B (fallback): fires only when cross_pool is empty — random for serendipity
+  SELECT v.* FROM videos v
+  WHERE v.id != $1
+    AND NOT EXISTS (SELECT 1 FROM cross_pool)
+  ORDER BY RANDOM()
+  LIMIT $2
+)
+LIMIT $2;
+```
+
+The `NOT EXISTS (SELECT 1 FROM cross_pool)` guard means the fallback branch only activates when the primary pool returns nothing. When the fallback fires, results are randomised rather than popularity-sorted — intentional, to surface unexpected content.
+
+### Cold start
+
+New users launching the app for the first time have no seed video. A separate endpoint handles this:
+
+**GET /videos/feed** — no `:id` param, returns a generic popular/fresh feed ordered by `view_count DESC, uploaded_at DESC`.
+
+### Tagging videos
+
+Tags aren't set on upload yet — insert them manually or wire them into the upload flow:
+
+```sql
+INSERT INTO video_category (video_id, category_tag)
+VALUES ('<video-uuid>', 'gaming');
+```
+
+### Performance
+
+Benchmarked with `EXPLAIN (ANALYZE, BUFFERS)` on a dev dataset (14 rows):
+
+| Metric | Value |
+|---|---|
+| Execution time | 0.185 ms |
+| Planning time | 0.657 ms |
+| Buffer hits | 12 (all from cache, zero disk I/O) |
+| Tag lookup | Index Only Scan on `video_category_pkey` |
+| Fallback path | Correctly skipped (`never executed`) |
+
+The `Seq Scan on videos` is expected and optimal at small scale — the planner switches to an index scan once the table grows. When you have thousands of videos, add:
+
+```sql
+-- Covers the ORDER BY in the primary pool
+CREATE INDEX idx_videos_feed ON videos (view_count DESC, uploaded_at DESC)
+WHERE progress > 0;
+
+-- Covers the NOT IN tag lookup
+CREATE INDEX idx_video_category_tag ON video_category (category_tag, video_id);
+```
+
+Re-run `EXPLAIN ANALYZE` after adding these — `Seq Scan` should become `Index Scan` and cost should drop significantly.
