@@ -13,14 +13,15 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (first_name, last_name, email, password)
-VALUES ($1, $2, $3, $4)
-RETURNING id, email, first_name, created_at, updated_at
+INSERT INTO users (first_name, last_name, country, email, password)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, email, first_name, last_name, country, created_at, updated_at
 `
 
 type CreateUserParams struct {
 	FirstName string
 	LastName  string
+	Country   string
 	Email     string
 	Password  string
 }
@@ -29,6 +30,8 @@ type CreateUserRow struct {
 	ID        uuid.UUID
 	Email     string
 	FirstName string
+	LastName  string
+	Country   string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -37,6 +40,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 	row := q.db.QueryRow(ctx, createUser,
 		arg.FirstName,
 		arg.LastName,
+		arg.Country,
 		arg.Email,
 		arg.Password,
 	)
@@ -45,6 +49,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.ID,
 		&i.Email,
 		&i.FirstName,
+		&i.LastName,
+		&i.Country,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -52,7 +58,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, first_name, last_name, email, password, created_at, updated_at
+SELECT id, first_name, last_name, country, email, password, created_at, updated_at
 FROM users
 WHERE email = $1
   AND deleted_at IS NULL
@@ -62,6 +68,7 @@ type GetUserByEmailRow struct {
 	ID        uuid.UUID
 	FirstName string
 	LastName  string
+	Country   string
 	Email     string
 	Password  string
 	CreatedAt time.Time
@@ -75,6 +82,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.ID,
 		&i.FirstName,
 		&i.LastName,
+		&i.Country,
 		&i.Email,
 		&i.Password,
 		&i.CreatedAt,
@@ -84,7 +92,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password, created_at, updated_at
+SELECT id, email, first_name, last_name, country, password, created_at, updated_at
 FROM users
 WHERE id = $1
   AND deleted_at IS NULL
@@ -93,6 +101,9 @@ WHERE id = $1
 type GetUserByIDRow struct {
 	ID        uuid.UUID
 	Email     string
+	FirstName string
+	LastName  string
+	Country   string
 	Password  string
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -104,6 +115,9 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
+		&i.FirstName,
+		&i.LastName,
+		&i.Country,
 		&i.Password,
 		&i.CreatedAt,
 		&i.UpdatedAt,

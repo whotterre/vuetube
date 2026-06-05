@@ -19,6 +19,7 @@ type VideoRepository interface {
 	CreateLike(ctx context.Context, userID, videoID uuid.UUID) error
 	CountVideoLikes(ctx context.Context, videoID uuid.UUID) (int64, error)
 	ToggleLikeTx(ctx context.Context, userID, videoID uuid.UUID) (bool, int64, error)
+	GetRecommendationFeed(ctx context.Context, limit int, videoID uuid.UUID) ([]db.GetCrossPoolRecommendationsRow, error)
 }
 
 type videoRepository struct {
@@ -154,4 +155,18 @@ func (r *videoRepository) ToggleLikeTx(ctx context.Context, userID, videoID uuid
 	}
 
 	return liked, count, nil
+}
+
+
+func (r *videoRepository) GetRecommendationFeed(ctx context.Context, limit int, videoID uuid.UUID) ([]db.GetCrossPoolRecommendationsRow, error){
+	params := db.GetCrossPoolRecommendationsParams{
+		ID: videoID,
+		Limit: int32(limit),
+	}
+	recs, err := r.queries.GetCrossPoolRecommendations(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return recs, nil
 }

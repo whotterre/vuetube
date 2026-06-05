@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ const VIDEO_UPLOAD_LIMIT = 500 * (1 << 20) // 500MB for now
 type VideoHandler interface {
 	UploadVideo(ctx *gin.Context)
 	ToggleVideoLike(ctx *gin.Context)
+	GetRecommendationFeed(ctx *gin.Context)
 }
 
 type videoHandler struct {
@@ -93,5 +95,40 @@ func (h *videoHandler) ToggleVideoLike(ctx *gin.Context) {
 		"message":    "Successfully toggled like for video",
 		"liked":      liked,
 		"like_count": count,
+	})
+}
+
+func (h *videoHandler) GetRecommendationFeed(ctx *gin.Context) {
+	vId, exists := ctx.Params.Get("id")
+	if !exists || vId == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "missing video id"})
+		return
+	}
+
+	videoId, err := uuid.Parse(vId)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid video id"})
+		return
+	}
+
+	limit := 20
+	if limStr := ctx.Query("limit"); limStr != "" {
+		parsed, err := strconv.Atoi(limStr)
+		if err != nil || parsed <= 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit must be a positive integer"})
+			return
+		}
+		limit = parsed
+	}
+
+	recommendations, err := h.videoService.GetRecommendationFeed(ctx.Request.Context(), limit, videoId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message":         "recommendation feed fetched successfully",
+		"recommendations": recommendations,
 	})
 }

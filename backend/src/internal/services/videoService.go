@@ -28,6 +28,7 @@ type VideoService interface {
 		videoSize int64,
 	) (*db.Video, error)
 	ToggleLikeVideo(ctx context.Context, videoID, userID uuid.UUID) (bool, int64, error)
+	GetRecommendationFeed(ctx context.Context, limit int, videoId uuid.UUID) ([]db.GetCrossPoolRecommendationsRow, error)
 }
 
 type videoService struct {
@@ -114,4 +115,21 @@ func (s *videoService) ToggleLikeVideo(ctx context.Context, videoID, userID uuid
 	}
 
 	return s.videoRepository.ToggleLikeTx(ctx, userID, videoID)
+}
+
+func (s *videoService) GetRecommendationFeed(ctx context.Context, limit int, videoId uuid.UUID) ([]db.GetCrossPoolRecommendationsRow, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+
+	if _, err := s.videoRepository.FindVideoByVideoID(ctx, videoId); err != nil {
+		return nil, fmt.Errorf("video not found: %w", err)
+	}
+
+	feed, err := s.videoRepository.GetRecommendationFeed(ctx, limit, videoId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch recommendation feed: %w", err)
+	}
+
+	return feed, nil
 }
