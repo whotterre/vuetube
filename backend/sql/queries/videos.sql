@@ -55,3 +55,6 @@ UNION ALL
   LIMIT $2
 )
 LIMIT $2;
+
+-- name: IncrementViewCount :exec
+UPDATE "videos" SET view_count = view_count + 1 WHERE id = $1;
