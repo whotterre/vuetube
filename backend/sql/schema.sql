@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
     "email" text NOT NULL UNIQUE,
     "first_name" text NOT NULL,
     "last_name" text NOT NULL,
+    "country" text NOT NULL DEFAULT '',
     "password" text NOT NULL,
     "created_at" timestamptz NOT NULL DEFAULT now(),
     "updated_at" timestamptz NOT NULL DEFAULT now(),

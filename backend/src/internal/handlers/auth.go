@@ -53,6 +53,12 @@ func (h *authHandler) Signup(ctx *gin.Context) {
 		})
 		return
 	}
+	if req.Country == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": "country is required",
+		})
+		return
+	}
 	res, err := h.authService.SignupUser(ctx, req)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
@@ -65,5 +71,6 @@ func (h *authHandler) Signup(ctx *gin.Context) {
 		"token":     res.Token,
 		"email":     res.Email,
 		"firstName": res.FirstName,
+		"country":   res.Country,
 	})
 }

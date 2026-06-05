@@ -63,6 +63,7 @@ func (s *userService) SignupUser(ctx *gin.Context, signUpData dto.SignupUserRequ
 		Password:  string(hashedPassword),
 		FirstName: signUpData.FirstName,
 		LastName:  signUpData.LastName,
+		Country:   signUpData.Country,
 	}
 
 	createdUser, err := s.userRepo.CreateUser(context.Background(), newUser)
@@ -79,5 +80,6 @@ func (s *userService) SignupUser(ctx *gin.Context, signUpData dto.SignupUserRequ
 		Token:     token,
 		Email:     createdUser.Email,
 		FirstName: createdUser.FirstName,
+		Country:   createdUser.Country,
 	}, nil
 }

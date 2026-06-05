@@ -32,6 +32,8 @@ func (r *userRepository) CreateUser(ctx context.Context, params db.CreateUserPar
 		ID:        createdUser.ID,
 		Email:     createdUser.Email,
 		FirstName: createdUser.FirstName,
+		LastName:  createdUser.LastName,
+		Country:   createdUser.Country,
 		CreatedAt: createdUser.CreatedAt,
 		UpdatedAt: createdUser.UpdatedAt,
 	}
@@ -48,6 +50,7 @@ func (r *userRepository) GetUserByEmail(ctx context.Context, email string) (*db.
 		ID:        user.ID,
 		FirstName: user.FirstName,
 		LastName:  user.LastName,
+		Country:   user.Country,
 		Email:     user.Email,
 		Password:  user.Password,
 		CreatedAt: user.CreatedAt,
@@ -65,6 +68,9 @@ func (r *userRepository) GetUserById(ctx context.Context, id uuid.UUID) (*db.Use
 	res := &db.User{
 		ID:        user.ID,
 		Email:     user.Email,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
+		Country:   user.Country,
 		Password:  user.Password,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
