@@ -1,10 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -29,6 +33,12 @@ type VideoService interface {
 	) (*db.Video, error)
 	ToggleLikeVideo(ctx context.Context, videoID, userID uuid.UUID) (bool, int64, error)
 	GetRecommendationFeed(ctx context.Context, limit int, videoId uuid.UUID) ([]db.GetCrossPoolRecommendationsRow, error)
+	// GetDashManifest fetches the MPD from S3, rewrites segment refs to proxy
+	// URLs on this backend, and returns the modified XML bytes.
+	GetDashManifest(ctx context.Context, cfg *config.Config, videoID uuid.UUID) ([]byte, error)
+	// GetDashSegment fetches a single DASH segment (init.mp4 or chunk-NNNNN.m4s)
+	// directly from S3 and returns the raw bytes for the handler to proxy.
+	GetDashSegment(ctx context.Context, cfg *config.Config, videoID uuid.UUID, filename string) (io.ReadCloser, error)
 }
 
 type videoService struct {
@@ -88,7 +98,7 @@ func (s *videoService) UploadVideo(ctx *gin.Context,
 }
 
 func copyFile(src multipart.File, dst *os.File) (int64, error) {
-	buf := make([]byte, 32*1024)
+	buf := make([]byte, (1 << 15))
 	var written int64
 	for {
 		nr, er := src.Read(buf)
@@ -132,4 +142,148 @@ func (s *videoService) GetRecommendationFeed(ctx context.Context, limit int, vid
 	}
 
 	return feed, nil
+}
+
+// GetDashManifest fetches the MPD from S3, rewrites the relative segment
+// references (init.mp4, chunk-*.m4s) to absolute proxy URLs served by this
+// backend, and returns the modified XML. The DASH player will then request
+// each segment through the /dash/segment/* endpoint, which presigns and
+// redirects to S3 — keeping the bucket private at all times.
+func (s *videoService) GetDashManifest(ctx context.Context, cfg *config.Config, videoID uuid.UUID) ([]byte, error) {
+	video, err := s.videoRepository.FindVideoByVideoID(ctx, videoID)
+	if err != nil {
+		return nil, fmt.Errorf("video not found: %w", err)
+	}
+	if video.S3Url == "" {
+		return nil, fmt.Errorf("video has no stream URL")
+	}
+	if !strings.HasSuffix(video.S3Url, ".mpd") {
+		return nil, fmt.Errorf("video stream URL is not a DASH manifest: %s", video.S3Url)
+	}
+
+	// s3_url stores the full manifest URL, e.g.
+	// https://<bucket>.s3.<region>.amazonaws.com/videos/<id>/dash/index.mpd
+	manifestKey := utils.ExtractS3Key(video.S3Url, cfg.BucketName, cfg.AWSRegion)
+
+	s3Helper := utils.NewS3Helper(ctx)
+	body, err := s3Helper.GetObject(ctx, cfg.BucketName, manifestKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch manifest from S3: %w", err)
+	}
+	defer body.Close()
+
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read manifest body: %w", err)
+	}
+	if err := validateDashManifestBytes(raw); err != nil {
+		return nil, err
+	}
+
+	// Rewrite every initialization="..." and media="..." attribute to an
+	// absolute backend proxy URL, regardless of filename pattern.
+	// With -adaptation_sets ffmpeg emits names like init-stream0.m4s and
+	// chunk-stream0-$Number%05d$.m4s — the regex handles both old and new forms.
+	base := fmt.Sprintf("/videos/%s/dash/segment", videoID)
+	reInit := regexp.MustCompile(`initialization="([^"]+)"`)
+	reMedia := regexp.MustCompile(`media="([^"]+)"`)
+	manifest := string(raw)
+	manifest = reInit.ReplaceAllString(manifest, fmt.Sprintf(`initialization="%s/$1"`, base))
+	manifest = reMedia.ReplaceAllString(manifest, fmt.Sprintf(`media="%s/$1"`, base))
+
+	go func() {
+		_ = s.videoRepository.IncrementViewCount(context.Background(), videoID)
+		// Add to watch history 
+	}()
+
+	return []byte(manifest), nil
+}
+
+func validateDashManifestBytes(raw []byte) error {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return fmt.Errorf("dash manifest is empty")
+	}
+	if trimmed[0] != '<' {
+		return fmt.Errorf("dash manifest object is not XML; stored s3_url may point to a media segment or original video")
+	}
+
+	window := string(trimmed)
+	if len(window) > 512 {
+		window = window[:512]
+	}
+	if !strings.Contains(window, "<MPD") {
+		return fmt.Errorf("dash manifest XML is missing MPD root")
+	}
+	return nil
+}
+
+// GetDashSegment validates the filename and fetches the segment bytes directly
+// from S3, returning a ReadCloser for the handler to proxy to the client.
+// The caller must close the returned ReadCloser.
+func (s *videoService) GetDashSegment(ctx context.Context, cfg *config.Config, videoID uuid.UUID, filename string) (io.ReadCloser, error) {
+	if !isValidSegmentFilename(filename) {
+		return nil, fmt.Errorf("invalid segment filename")
+	}
+
+	objectKey := fmt.Sprintf("videos/%s/dash/%s", videoID, filename)
+	s3Helper := utils.NewS3Helper(ctx)
+	body, err := s3Helper.GetObject(ctx, cfg.BucketName, objectKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch segment: %w", err)
+	}
+	return body, nil
+}
+
+// isValidSegmentFilename accepts init and chunk filenames from both the old
+// muxed output (init.mp4, chunk-NNNNN.m4s) and the new adaptation_sets output
+// (init-streamN.mp4/init-streamN.m4s, chunk-streamN-NNNNN.m4s).
+func isValidSegmentFilename(name string) bool {
+	return isValidInitName(name) || isValidChunkName(name)
+}
+
+func isValidInitName(name string) bool {
+	if name == "init.mp4" {
+		return true
+	}
+	if !strings.HasPrefix(name, "init-stream") {
+		return false
+	}
+	stem, ok := strings.CutSuffix(name, ".mp4")
+	if !ok {
+		stem, ok = strings.CutSuffix(name, ".m4s")
+	}
+	if !ok {
+		return false
+	}
+	return isAllDigits(strings.TrimPrefix(stem, "init-stream"))
+}
+
+func isValidChunkName(name string) bool {
+	if !strings.HasPrefix(name, "chunk-") || !strings.HasSuffix(name, ".m4s") {
+		return false
+	}
+	middle := strings.TrimPrefix(strings.TrimSuffix(name, ".m4s"), "chunk-")
+	// chunk-streamN-NNNNN form
+	if strings.HasPrefix(middle, "stream") {
+		parts := strings.SplitN(middle, "-", 2)
+		if len(parts) != 2 {
+			return false
+		}
+		return isAllDigits(strings.TrimPrefix(parts[0], "stream")) && isAllDigits(parts[1])
+	}
+	// chunk-NNNNN form
+	return isAllDigits(middle)
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }

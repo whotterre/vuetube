@@ -3,8 +3,10 @@ package utils
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -70,4 +72,34 @@ func (h *S3Helper) ObjectExists(ctx context.Context, bucketName string, objectKe
 	}
 
 	return true, nil
+}
+
+func (h *S3Helper) PresignGetObject(ctx context.Context, bucketName, objectKey string, ttl time.Duration) (string, error) {
+    presignClient := s3.NewPresignClient(h.S3Client)
+    req, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+        Bucket: aws.String(bucketName),
+        Key:    aws.String(objectKey),
+    }, s3.WithPresignExpires(ttl))
+    if err != nil {
+        return "", fmt.Errorf("failed to presign object: %w", err)
+    }
+    return req.URL, nil
+}
+
+// GetObject fetches the raw bytes of an S3 object and returns them.
+// The caller is responsible for closing the returned ReadCloser.
+func (h *S3Helper) GetObject(ctx context.Context, bucketName, objectKey string) (io.ReadCloser, error) {
+	result, err := h.S3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get object %s: %w", objectKey, err)
+	}
+	return result.Body, nil
+}
+
+func ExtractS3Key(s3Url, bucketName, region string) string {
+	prefix := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/", bucketName, region)
+	return strings.TrimPrefix(s3Url, prefix)
 }

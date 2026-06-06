@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -19,6 +21,8 @@ type VideoHandler interface {
 	UploadVideo(ctx *gin.Context)
 	ToggleVideoLike(ctx *gin.Context)
 	GetRecommendationFeed(ctx *gin.Context)
+	ServeDashManifest(ctx *gin.Context)
+	ServeDashSegment(ctx *gin.Context)
 }
 
 type videoHandler struct {
@@ -131,4 +135,71 @@ func (h *videoHandler) GetRecommendationFeed(ctx *gin.Context) {
 		"message":         "recommendation feed fetched successfully",
 		"recommendations": recommendations,
 	})
+}
+
+// ServeDashManifest fetches the MPD from S3, rewrites segment URLs to point
+// at this backend's segment proxy, and returns it as application/dash+xml.
+func (h *videoHandler) ServeDashManifest(ctx *gin.Context) {
+	videoID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid video id"})
+		return
+	}
+
+	manifest, err := h.videoService.GetDashManifest(ctx.Request.Context(), h.cfg, videoID)
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "not found"):
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case strings.Contains(err.Error(), "still processing"):
+			ctx.JSON(http.StatusAccepted, gin.H{"error": err.Error()})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	ctx.Header("Content-Type", "application/dash+xml")
+	ctx.Header("Cache-Control", "no-cache")
+	ctx.Data(http.StatusOK, "application/dash+xml", manifest)
+}
+
+// ServeDashSegment fetches the requested segment (init-streamN.* or chunk-NNNNN.m4s)
+// directly from S3 and streams the bytes to the client. Proxying avoids the
+// 307→S3 redirect which would forward the Authorization header and break
+// S3's pre-signed URL auth.
+func (h *videoHandler) ServeDashSegment(ctx *gin.Context) {
+	videoID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid video id"})
+		return
+	}
+
+	filename := ctx.Param("filename")
+	if strings.Contains(filename, "/") || strings.HasPrefix(filename, ".") {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
+		return
+	}
+
+	body, err := h.videoService.GetDashSegment(ctx.Request.Context(), h.cfg, videoID, filename)
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid segment filename") {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer body.Close()
+
+	contentType := "video/mp4"
+	if strings.HasSuffix(filename, ".m4s") {
+		contentType = "video/iso.segment"
+	}
+
+	ctx.Header("Cache-Control", "public, max-age=3600")
+	ctx.Header("Accept-Ranges", "bytes")
+	ctx.Status(http.StatusOK)
+	ctx.Header("Content-Type", contentType)
+	io.Copy(ctx.Writer, body)
 }
