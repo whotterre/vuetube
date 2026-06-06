@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
 	"github.com/whotterre/vuetube/src/internal/config"
@@ -22,8 +23,16 @@ import (
 
 func main() {
 	app := gin.Default()
+	// Tentative: restrict later
+	app.Use(cors.New(cors.Config{
+		AllowAllOrigins:  true,
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
+		AllowCredentials: false,
+		MaxAge:           12 * time.Hour,
+	}))
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		logger.Error("Failed to load config", "error", err)

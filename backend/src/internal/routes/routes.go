@@ -46,6 +46,10 @@ func SetupRoutes(app *gin.Engine, db *pgxpool.Pool, cfg *config.Config, logger *
 	videoRoutes.POST("/upload", videoHandler.UploadVideo)
 	likeLimiter := rate.NewLimiter(rate.Limit(5), 1)
 	feedLimiter := rate.NewLimiter(rate.Limit(10), 1)
-	videoRoutes.GET("/feed/:id", middleware.RateLimitMiddleware(likeLimiter), videoHandler.GetRecommendationFeed)
-	videoRoutes.PATCH("/:id/like", middleware.RateLimitMiddleware(feedLimiter), videoHandler.ToggleVideoLike)
+	manifestLimiter := rate.NewLimiter(rate.Limit(10), 3)
+	segmentLimiter := rate.NewLimiter(rate.Limit(60), 10)
+	videoRoutes.GET("/:id/dash/manifest", middleware.RateLimitMiddleware(manifestLimiter), videoHandler.ServeDashManifest)
+	videoRoutes.GET("/:id/dash/segment/:filename", middleware.RateLimitMiddleware(segmentLimiter), videoHandler.ServeDashSegment)
+	videoRoutes.GET("/feed/:id", middleware.RateLimitMiddleware(feedLimiter), videoHandler.GetRecommendationFeed)
+	videoRoutes.PATCH("/:id/like", middleware.RateLimitMiddleware(likeLimiter), videoHandler.ToggleVideoLike)
 }

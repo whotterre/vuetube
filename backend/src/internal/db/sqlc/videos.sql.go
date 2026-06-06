@@ -187,6 +187,15 @@ func (q *Queries) GetCrossPoolRecommendations(ctx context.Context, arg GetCrossP
 	return items, nil
 }
 
+const incrementViewCount = `-- name: IncrementViewCount :exec
+UPDATE "videos" SET view_count = view_count + 1 WHERE id = $1
+`
+
+func (q *Queries) IncrementViewCount(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, incrementViewCount, id)
+	return err
+}
+
 const insertVideoLike = `-- name: InsertVideoLike :exec
 INSERT INTO video_likes (video_id, user_id)
 VALUES ($1, $2)

@@ -116,51 +116,55 @@ func (p *VideoProcessor) HandleVideoUploadTask(ctx context.Context, t *asynq.Tas
 
 	dashInputPath := payload.TempFilePath
 	manifestName := "index.mpd"
-	initName := "init.mp4"
-	initPath := filepath.Join(dashDir, initName)
-
-	// Use relative names for init and media segments and run ffmpeg with its
-	// working directory set to dashDir. This prevents ffmpeg from prepending
-	// the output directory to absolute paths (which caused double-prefixing
-	// like C:/dir/C:/dir/init.mp4 on Windows).
 	manifestOutPath := filepath.Join(dashDir, manifestName)
-	ffInitName := initName
-	// Use DASH muxer placeholders so ffmpeg expands segment numbers
-	ffMediaPatternName := "chunk-$Number%05d$.m4s"
 	ffManifestPath := filepath.ToSlash(manifestOutPath)
 
+	hasAudio, err := hasAudioStream(ctx, dashInputPath)
+	if err != nil {
+		return fmt.Errorf("failed to inspect audio streams: %w", err)
+	}
+
+	// -adaptation_sets separates streams into distinct segment files. Only add
+	// the audio adaptation set when the upload actually contains audio; ffmpeg
+	// fails before the DB update if asked to package a missing audio stream.
 	ffmpegArgs := []string{
 		"-y",
 		"-i", dashInputPath,
 		"-map", "0:v:0",
-		"-map", "0:a?",
 		"-c:v", "libx264",
 		"-preset", "veryfast",
 		"-profile:v", "main",
 		"-sc_threshold", "0",
 		"-g", "48",
 		"-keyint_min", "48",
-		"-c:a", "aac",
-		"-b:a", "128k",
+	}
+	if hasAudio {
+		ffmpegArgs = append(ffmpegArgs,
+			"-map", "0:a:0",
+			"-c:a", "aac",
+			"-profile:a", "aac_low",
+			"-b:a", "128k",
+		)
+	}
+	ffmpegArgs = append(ffmpegArgs,
 		"-f", "dash",
 		"-seg_duration", "6",
 		"-use_timeline", "1",
 		"-use_template", "1",
-		"-init_seg_name", ffInitName,
-		"-media_seg_name", ffMediaPatternName,
+		"-init_seg_name", "init-stream$RepresentationID$.mp4",
+		"-media_seg_name", "chunk-stream$RepresentationID$-$Number%05d$.m4s",
+		"-adaptation_sets", dashAdaptationSets(hasAudio),
 		manifestName,
-	}
+	)
 	log.Printf("running ffmpeg in dir=%s: ffmpeg %s", dashDir, strings.Join(ffmpegArgs, " "))
 	cmd := exec.CommandContext(ctx, "ffmpeg", ffmpegArgs...)
-	// ensure ffmpeg writes relative outputs into our temp dir
 	cmd.Dir = dashDir
 	out, err := cmd.CombinedOutput()
 	log.Printf("ffmpeg output (len=%d): %s", len(out), out)
 	if err != nil {
 		return fmt.Errorf("ffmpeg dash packaging failed: %w\noutput: %s", err, out)
 	}
-	log.Printf("dash packaging complete: video_id=%s dash_dir=%s", videoID, dashDir)
-	log.Printf("dash output paths: video_id=%s init=%s media_pattern=%s manifest=%s", videoID, ffInitName, ffMediaPatternName, ffManifestPath)
+	log.Printf("dash packaging complete: video_id=%s dash_dir=%s manifest=%s", videoID, dashDir, ffManifestPath)
 
 	entries, err := os.ReadDir(dashDir)
 	if err != nil {
@@ -183,41 +187,46 @@ func (p *VideoProcessor) HandleVideoUploadTask(ctx context.Context, t *asynq.Tas
 	manifestFile.Close()
 	log.Printf("dash manifest uploaded: video_id=%s s3_key=%s", videoID, filepath.ToSlash(filepath.Join(dashObjectPrefix, manifestName)))
 
-	initFile, err := os.Open(initPath)
+	assetFiles, err := filepath.Glob(filepath.Join(dashDir, "*"))
 	if err != nil {
-		return fmt.Errorf("failed to open dash init segment at %s: %w", initPath, err)
+		return fmt.Errorf("failed to list dash assets: %w", err)
 	}
-	if _, err := p.s3Helper.UploadFile(ctx, p.cfg.BucketName, filepath.ToSlash(filepath.Join(dashObjectPrefix, initName)), initFile); err != nil {
-		initFile.Close()
-		return fmt.Errorf("failed to upload dash init segment: %w", err)
-	}
-	initFile.Close()
-	log.Printf("dash init segment uploaded: video_id=%s s3_key=%s", videoID, filepath.ToSlash(filepath.Join(dashObjectPrefix, initName)))
-
-	// DASH muxer will replace the template into concrete filenames like
-	// "chunk-<rep>-00001.m4s". Match any chunk-*.m4s to find them.
-	segmentFiles, err := filepath.Glob(filepath.Join(dashDir, "chunk-*.m4s"))
-	if err != nil {
-		return fmt.Errorf("failed to list dash segments: %w", err)
-	}
-	if len(segmentFiles) == 0 {
-		return fmt.Errorf("ffmpeg did not generate any dash segment files in %s (expected pattern %s)", dashDir, filepath.Join(dashDir, "chunk_*.m4s"))
-	}
-	log.Printf("dash segments generated: video_id=%s count=%d", videoID, len(segmentFiles))
-
-	for _, segmentPath := range segmentFiles {
-		segmentFile, err := os.Open(segmentPath)
-		if err != nil {
-			return fmt.Errorf("failed to open dash segment %s: %w", segmentPath, err)
+	initCount := 0
+	segmentCount := 0
+	for _, assetPath := range assetFiles {
+		name := filepath.Base(assetPath)
+		if name == manifestName {
+			continue
 		}
-		objectKey := filepath.ToSlash(filepath.Join(dashObjectPrefix, filepath.Base(segmentPath)))
-		_, err = p.s3Helper.UploadFile(ctx, p.cfg.BucketName, objectKey, segmentFile)
-		segmentFile.Close()
-		if err != nil {
-			return fmt.Errorf("failed to upload dash segment %s: %w", segmentPath, err)
+		switch {
+		case strings.HasPrefix(name, "init-"):
+			initCount++
+		case strings.HasPrefix(name, "chunk-"):
+			segmentCount++
+		default:
+			log.Printf("skipping unexpected dash asset: video_id=%s name=%s", videoID, name)
+			continue
 		}
-		log.Printf("dash segment uploaded: video_id=%s s3_key=%s", videoID, objectKey)
+
+		assetFile, err := os.Open(assetPath)
+		if err != nil {
+			return fmt.Errorf("failed to open dash asset %s: %w", assetPath, err)
+		}
+		objectKey := filepath.ToSlash(filepath.Join(dashObjectPrefix, name))
+		_, err = p.s3Helper.UploadFile(ctx, p.cfg.BucketName, objectKey, assetFile)
+		assetFile.Close()
+		if err != nil {
+			return fmt.Errorf("failed to upload dash asset %s: %w", assetPath, err)
+		}
+		log.Printf("dash asset uploaded: video_id=%s s3_key=%s", videoID, objectKey)
 	}
+	if initCount == 0 {
+		return fmt.Errorf("ffmpeg did not generate any dash init files in %s", dashDir)
+	}
+	if segmentCount == 0 {
+		return fmt.Errorf("ffmpeg did not generate any dash media segments in %s", dashDir)
+	}
+	log.Printf("dash assets uploaded: video_id=%s init_count=%d segment_count=%d", videoID, initCount, segmentCount)
 
 	videoS3URL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s/%s",
 		p.cfg.BucketName, p.cfg.AWSRegion, dashObjectPrefix, manifestName)
@@ -237,4 +246,27 @@ func (p *VideoProcessor) HandleVideoUploadTask(ctx context.Context, t *asynq.Tas
 	log.Printf("video processing completed: video_id=%s dash_manifest=%s", videoID, videoS3URL)
 
 	return nil
+}
+
+func hasAudioStream(ctx context.Context, inputPath string) (bool, error) {
+	cmd := exec.CommandContext(ctx,
+		"ffprobe",
+		"-v", "error",
+		"-select_streams", "a:0",
+		"-show_entries", "stream=index",
+		"-of", "csv=p=0",
+		inputPath,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("ffprobe audio stream check failed: %w\noutput: %s", err, out)
+	}
+	return strings.TrimSpace(string(out)) != "", nil
+}
+
+func dashAdaptationSets(hasAudio bool) string {
+	if hasAudio {
+		return "id=0,streams=v id=1,streams=a"
+	}
+	return "id=0,streams=v"
 }
