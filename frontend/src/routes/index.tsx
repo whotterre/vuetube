@@ -50,7 +50,7 @@ function Home() {
 
       {/* UX Heading */}
       {(!isLoading && !error && filteredData && filteredData.length > 0) && (
-        <div className="mb-8 flex items-baseline justify-between border-b border-border pb-4">
+        <div className="mb-8 flex items-baseline justify-between">
           <h2 className="font-display text-2xl md:text-3xl">
             {q ? `Search Results (${filteredData.length})` : "Videos"}
           </h2>
