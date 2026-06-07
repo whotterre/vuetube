@@ -31,11 +31,15 @@ function WatchPage() {
       .then((v) => {
         if (cancelled) return;
         setVideo(v);
-        setLikeCount(v.ViewCount && 0); // placeholder; backend doesn't expose like_count on video
+        setLikeCount(0); // initialize to 0; backend doesn't expose like_count on video
+        document.title = `${v.Name} — VueTube`;
       })
       .catch((e) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      document.title = "VueTube";
+    };
   }, [id]);
 
   // init dash.js
@@ -70,7 +74,7 @@ function WatchPage() {
       try { player?.reset(); } catch { /* noop */ }
       playerRef.current = null;
     };
-  }, [video, id]);
+  }, [id]);
 
   const { data: recommendations } = useQuery({
     queryKey: ["feed", id],

@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { Field } from "@/components/Field";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -47,20 +48,5 @@ function LoginPage() {
         New to VueTube? <Link to="/signup" className="text-primary hover:underline">Create an account</Link>
       </p>
     </main>
-  );
-}
-
-function Field({ label, type, value, onChange }: { label: string; type: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium">{label}</span>
-      <input
-        type={type}
-        required
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-2 w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm outline-none focus:border-primary"
-      />
-    </label>
   );
 }

@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { Field } from "@/components/Field";
 
 export const Route = createFileRoute("/signup")({
   component: SignupPage,
@@ -40,7 +41,26 @@ function SignupPage() {
         </div>
         <Field label="Email" type="email" value={form.email} onChange={update("email")} />
         <Field label="Password" type="password" value={form.password} onChange={update("password")} />
-         <Field label="Country" type="text" value={form.country} onChange={update("country")} />
+        <Field label="Country">
+          <select
+            required
+            value={form.country}
+            onChange={(e) => update("country")(e.target.value)}
+            className="mt-2 w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm outline-none focus:border-primary"
+          >
+            <option value="" disabled>Select your country</option>
+            <option value="US">United States</option>
+            <option value="UK">United Kingdom</option>
+            <option value="CA">Canada</option>
+            <option value="AU">Australia</option>
+            <option value="FR">France</option>
+            <option value="DE">Germany</option>
+            <option value="JP">Japan</option>
+            <option value="IN">India</option>
+            <option value="BR">Brazil</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </Field>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <button
           disabled={loading}
@@ -53,20 +73,5 @@ function SignupPage() {
         Already have an account? <Link to="/login" className="text-primary hover:underline">Sign in</Link>
       </p>
     </main>
-  );
-}
-
-function Field({ label, type, value, onChange }: { label: string; type: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium">{label}</span>
-      <input
-        type={type}
-        required
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-2 w-full rounded-md border border-border bg-input px-3 py-2.5 text-sm outline-none focus:border-primary"
-      />
-    </label>
   );
 }

@@ -52,6 +52,7 @@ function UploadPage() {
           setProcessingPct(v.Progress);
           if (v.Progress >= 100) {
             if (pollRef.current) clearInterval(pollRef.current);
+            navigate({ to: "/watch/$id", params: { id: video.ID } });
           }
         } catch (e) {
           console.error(e);
