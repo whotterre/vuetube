@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { VideoCard } from "@/components/VideoCard";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
+  const { isAuthenticated } = useAuth();
   const { data, isLoading, error } = useQuery({
     queryKey: ["feed"],
     queryFn: () => api.feed(undefined, 24),
@@ -23,25 +25,16 @@ function Home() {
 
   return (
     <main className="relative z-10 mx-auto max-w-[1600px] px-6 py-12">
-      <div className="mb-12 flex items-end justify-between border-b border-border pb-8">
-        <div>
-          <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.25em] text-primary">
-            ╱╱ Today's edition
-          </p>
-          <h1 className="font-display text-6xl italic leading-[0.95] md:text-7xl">
+      {!isAuthenticated && (
+        <div className="mb-12 pb-8">
+          <h1 className="font-display text-6xl leading-[0.95] md:text-7xl">
             What's <span className="text-primary">streaming</span><br />right now.
           </h1>
           <p className="mt-4 max-w-md text-sm leading-relaxed text-muted-foreground">
             An independent feed of moving images, served adaptively at whatever bitrate your line can carry.
           </p>
         </div>
-        <Link
-          to="/upload"
-          className="hidden rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition hover:bg-primary hover:text-primary-foreground md:inline-flex"
-        >
-          + Contribute a film
-        </Link>
-      </div>
+      )}
 
       {isLoading ? (
         <SkeletonGrid />
@@ -51,7 +44,7 @@ function Home() {
         <EmptyState title="No videos yet" message="Be the first to upload something." />
       ) : (
         <div className="grid gap-x-6 gap-y-12 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
-          {data.map((v) => <VideoCard key={v.ID} video={v} />)}
+          {data.slice(0, isAuthenticated ? undefined : 4).map((v) => <VideoCard key={v.ID} video={v} />)}
         </div>
       )}
     </main>
@@ -59,9 +52,10 @@ function Home() {
 }
 
 function SkeletonGrid() {
+  const { isAuthenticated } = useAuth();
   return (
     <div className="grid gap-x-5 gap-y-10 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: isAuthenticated ? 8 : 4 }).map((_, i) => (
         <div key={i}>
           <div className="aspect-video w-full animate-pulse rounded-lg bg-muted" />
           <div className="mt-3 h-4 w-3/4 animate-pulse rounded bg-muted" />

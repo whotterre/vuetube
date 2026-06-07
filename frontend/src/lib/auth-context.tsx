@@ -12,11 +12,12 @@ interface AuthCtx {
 const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setTokenState] = useState<string | null>(null);
-
-  useEffect(() => {
-    setTokenState(localStorage.getItem("vuetube_token"));
-  }, []);
+  const [token, setTokenState] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("vuetube_token");
+    }
+    return null;
+  });
 
   const login = async (email: string, password: string) => {
     const res = await api.login({ email, password });
