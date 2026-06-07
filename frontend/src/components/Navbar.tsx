@@ -1,13 +1,24 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { Search } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useState } from "react";
 
 export function Navbar() {
   const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate({ to: "/", search: { q: searchQuery.trim() } });
+    }
+  };
+
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background/85 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-6">
-        <Link to="/" className="group flex items-center gap-2 hover:opacity-80 transition-opacity" aria-label="VueTube Home">
+        <Link to="/" className="group flex items-center gap-2 hover:opacity-80 transition-opacity shrink-0" aria-label="VueTube Home">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
@@ -23,7 +34,21 @@ export function Navbar() {
           </svg>
          <p className="font-display text-xl font-medium tracking-tight">Vue<span className="text-primary font-bold">Tube</span></p>
         </Link>
-        <nav className="flex items-center gap-2">
+        
+        <form onSubmit={handleSearch} className="hidden md:flex flex-1 items-center justify-center max-w-lg mx-8">
+          <div className="relative w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search..."
+              className="w-full rounded-full border border-border bg-black/20 py-2.5 pl-11 pr-4 text-sm outline-none transition focus:border-primary focus:bg-background focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/70"
+            />
+          </div>
+        </form>
+
+        <nav className="flex items-center gap-2 shrink-0">
           {isAuthenticated ? (
             <>
               <Link

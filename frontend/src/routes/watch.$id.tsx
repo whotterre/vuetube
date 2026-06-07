@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ThumbsUp } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ThumbsUp, ArrowLeft } from "lucide-react";
 import { API_URL, api, formatViews, type Video } from "@/lib/api";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/lib/auth-context";
@@ -169,6 +169,12 @@ function WatchPage() {
 
   return (
     <main className="relative z-10 mx-auto max-w-[1600px] px-6 py-8">
+      <div className="mb-6">
+        <button onClick={() => window.history.back()} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors w-fit">
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
+      </div>
       <div className="flex flex-col lg:flex-row gap-10">
         <div className="w-full lg:w-[50%] xl:w-[55%]">
           <div ref={containerRef} className="group relative aspect-video w-full overflow-hidden rounded-xl bg-black ring-1 ring-border">
@@ -215,15 +221,15 @@ function WatchPage() {
                   <button
                     onClick={(e) => { e.stopPropagation(); handleLike(); }}
                     disabled={!isAuthenticated}
-                    className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition backdrop-blur ${
+                    className={`flex items-center gap-2.5 rounded-full px-5 py-2.5 text-base font-medium transition backdrop-blur ${
                       liked
                         ? "bg-primary text-primary-foreground"
                         : "bg-black/40 text-white hover:bg-white/20"
                     } ${!isAuthenticated ? "cursor-not-allowed opacity-60" : ""}`}
                     title={isAuthenticated ? "Like" : "Sign in to like"}
                   >
-                    <ThumbsUp className={`h-4 w-4 ${liked ? "fill-current" : ""}`} />
-                    <span className="font-mono text-xs">{likeCount}</span>
+                    <ThumbsUp className={`h-5 w-5 ${liked ? "fill-current" : ""}`} />
+                    <span className="font-mono text-sm">{likeCount}</span>
                   </button>
                 </div>
                 
@@ -288,8 +294,8 @@ function WatchPage() {
           {loading ? (
             <div className="mt-6 h-10 w-2/3 animate-pulse rounded bg-muted" />
           ) : video ? (
-            <div className="mt-6 flex flex-col justify-between gap-4 border-b border-border pb-6 md:flex-row md:items-end">
-              <h1 className="font-display text-3xl leading-tight md:text-4xl lg:max-w-[65%]">{video.Name}</h1>
+            <div className="mt-6 flex flex-col justify-between gap-4 pb-6 md:flex-row md:items-end">
+              <h1 className="font-display text-2xl leading-tight md:text-3xl lg:max-w-[65%]">{video.Name}</h1>
               <div className="flex shrink-0 flex-wrap items-center gap-3 lg:justify-end lg:pb-1">
                 <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
                   {formatViews(video.ViewCount)} views

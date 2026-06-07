@@ -1,10 +1,15 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/")({
+  validateSearch: (search: Record<string, unknown>): { q?: string } => {
+    return {
+      q: search.q as string | undefined,
+    };
+  },
   head: () => ({
     meta: [
       { title: "VueTube — Watch the independent web" },
@@ -18,10 +23,17 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { isAuthenticated } = useAuth();
+  const search = useSearch({ from: "/" });
+  const q = search.q?.toLowerCase();
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["feed"],
     queryFn: () => api.feed(undefined, 24),
   });
+
+  const filteredData = data
+    ? data.filter((v) => !q || v.Name.toLowerCase().includes(q) || (v.Resolution && v.Resolution.toLowerCase().includes(q)))
+    : [];
 
   return (
     <main className="relative z-10 mx-auto max-w-[1600px] px-6 py-12">
@@ -36,15 +48,24 @@ function Home() {
         </div>
       )}
 
+      {/* UX Heading */}
+      {(!isLoading && !error && filteredData && filteredData.length > 0) && (
+        <div className="mb-8 flex items-baseline justify-between border-b border-border pb-4">
+          <h2 className="font-display text-2xl md:text-3xl">
+            {q ? `Search Results (${filteredData.length})` : "Videos"}
+          </h2>
+        </div>
+      )}
+
       {isLoading ? (
         <SkeletonGrid />
       ) : error ? (
         <EmptyState title="Couldn't load videos" message={(error as Error).message} />
-      ) : !data || data.length === 0 ? (
-        <EmptyState title="No videos yet" message="Be the first to upload something." />
+      ) : !filteredData || filteredData.length === 0 ? (
+        <EmptyState title={q ? `No videos found for "${q}"` : "No videos yet"} message={q ? "Try a different search term." : "Be the first to upload something."} />
       ) : (
         <div className="grid gap-x-6 gap-y-12 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">
-          {data.slice(0, isAuthenticated ? undefined : 4).map((v) => <VideoCard key={v.ID} video={v} />)}
+          {filteredData.slice(0, isAuthenticated ? undefined : 4).map((v) => <VideoCard key={v.ID} video={v} />)}
         </div>
       )}
     </main>
