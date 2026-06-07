@@ -39,6 +39,7 @@ type VideoService interface {
 	// GetDashSegment fetches a single DASH segment (init.mp4 or chunk-NNNNN.m4s)
 	// directly from S3 and returns the raw bytes for the handler to proxy.
 	GetDashSegment(ctx context.Context, cfg *config.Config, videoID uuid.UUID, filename string) (io.ReadCloser, error)
+	GetGenericFeed(ctx context.Context, limit int) ([]db.Video, error)
 }
 
 type videoService struct {
@@ -287,3 +288,12 @@ func isAllDigits(s string) bool {
 	}
 	return true
 }
+
+func (s *videoService) GetGenericFeed(ctx context.Context, limit int) ([]db.Video, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+
+	return s.videoRepository.GetGenericFeed(ctx, limit)
+}
+

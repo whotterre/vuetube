@@ -187,6 +187,46 @@ func (q *Queries) GetCrossPoolRecommendations(ctx context.Context, arg GetCrossP
 	return items, nil
 }
 
+const getGenericFeed = `-- name: GetGenericFeed :many
+SELECT id, name, s3_url, thumbnail_url, duration, resolution, size, progress, view_count, owner, uploaded_at, updated_at FROM videos
+WHERE progress > 0
+ORDER BY view_count DESC, uploaded_at DESC
+LIMIT $1
+`
+
+func (q *Queries) GetGenericFeed(ctx context.Context, limit int32) ([]Video, error) {
+	rows, err := q.db.Query(ctx, getGenericFeed, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Video
+	for rows.Next() {
+		var i Video
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.S3Url,
+			&i.ThumbnailUrl,
+			&i.Duration,
+			&i.Resolution,
+			&i.Size,
+			&i.Progress,
+			&i.ViewCount,
+			&i.Owner,
+			&i.UploadedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const incrementViewCount = `-- name: IncrementViewCount :exec
 UPDATE "videos" SET view_count = view_count + 1 WHERE id = $1
 `
