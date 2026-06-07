@@ -7,14 +7,21 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background/85 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-6">
-        <Link to="/" className="group flex items-baseline gap-2">
-          <span className="font-display text-3xl italic leading-none text-primary">V</span>
-          <span className="text-base font-semibold tracking-tight">
-            ue<span className="text-muted-foreground">·</span>tube
-          </span>
-          <span className="ml-2 hidden font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground sm:inline">
-            est. 2026
-          </span>
+        <Link to="/" className="group flex items-center gap-2 hover:opacity-80 transition-opacity" aria-label="VueTube Home">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-8 w-8 text-primary"
+          >
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" />
+          </svg>
+         <p className="font-display text-xl font-medium tracking-tight">Vue<span className="text-primary font-bold">Tube</span></p>
         </Link>
         <nav className="flex items-center gap-2">
           {isAuthenticated ? (

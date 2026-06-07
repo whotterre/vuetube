@@ -1,13 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap");
 
 @source "../src";
 
 @theme inline {
-  --font-sans: "Inter Tight", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Syne", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -30,20 +30,20 @@
 
 :root {
   --radius: 0.5rem;
-  /* VueTube — editorial dark, paper-on-ink with a single ember accent */
+  /* VueTube — editorial dark, paper-on-ink with a crimson accent */
   --background: oklch(0.14 0.005 60);
   --foreground: oklch(0.96 0.01 80);
   --card: oklch(0.18 0.006 60);
   --card-foreground: oklch(0.96 0.01 80);
   --muted: oklch(0.23 0.006 60);
   --muted-foreground: oklch(0.68 0.015 75);
-  --primary: oklch(0.72 0.17 45);          /* warm ember */
-  --primary-foreground: oklch(0.14 0.005 60);
-  --accent: oklch(0.72 0.17 45);
-  --accent-foreground: oklch(0.14 0.005 60);
+  --primary: oklch(0.65 0.22 15);          /* vibrant crimson */
+  --primary-foreground: oklch(0.98 0.01 15);
+  --accent: oklch(0.65 0.22 15);
+  --accent-foreground: oklch(0.98 0.01 15);
   --border: oklch(0.26 0.006 60);
   --input: oklch(0.23 0.006 60);
-  --ring: oklch(0.72 0.17 45);
+  --ring: oklch(0.65 0.22 15);
   --destructive: oklch(0.62 0.21 25);
 }
 
@@ -71,9 +71,9 @@
     background-size: 3px 3px;
   }
   h1, h2, h3, .font-display {
-    font-family: var(--font-serif);
-    font-weight: 400;
-    letter-spacing: -0.01em;
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
   }
   .font-mono, code, kbd {
     font-family: var(--font-mono);

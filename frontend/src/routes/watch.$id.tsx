@@ -1,7 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ThumbsUp } from "lucide-react";
 import { API_URL, api, formatViews, type Video } from "@/lib/api";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/lib/auth-context";
@@ -13,6 +13,14 @@ export const Route = createFileRoute("/watch/$id")({
 function WatchPage() {
   const { id } = Route.useParams();
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate({ to: "/login", replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -30,6 +38,7 @@ function WatchPage() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(true);
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -156,15 +165,17 @@ function WatchPage() {
     }
   };
 
+  if (!isAuthenticated) return null;
+
   return (
     <main className="relative z-10 mx-auto max-w-[1600px] px-6 py-8">
       <div className="flex flex-col lg:flex-row gap-10">
-        <div className="w-full lg:w-[65%] xl:w-[70%]">
+        <div className="w-full lg:w-[50%] xl:w-[55%]">
           <div ref={containerRef} className="group relative aspect-video w-full overflow-hidden rounded-xl bg-black ring-1 ring-border">
             {processing ? (
               <div className="flex h-full w-full flex-col items-center justify-center text-center">
                 <div className="font-mono text-[11px] uppercase tracking-[0.3em] text-primary">◐ Processing</div>
-                <p className="mt-3 max-w-md font-display text-2xl italic text-foreground">
+                <p className="mt-3 max-w-md font-display text-2xl text-foreground">
                   Still developing in the darkroom.
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">Check back in a moment.</p>
@@ -183,7 +194,38 @@ function WatchPage() {
                   onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
+                  onWaiting={() => setIsBuffering(true)}
+                  onPlaying={() => setIsBuffering(false)}
+                  onCanPlay={() => setIsBuffering(false)}
                 />
+                
+                {/* Custom Buffering Loader */}
+                {isBuffering && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity">
+                    <div className="relative flex h-16 w-16 items-center justify-center">
+                      <div className="absolute inset-0 animate-[spin_1.5s_linear_infinite] rounded-full border-[3px] border-transparent border-t-primary border-r-primary/50"></div>
+                      <div className="absolute inset-2 animate-[spin_2s_linear_infinite_reverse] rounded-full border-[3px] border-transparent border-b-primary border-l-primary/30"></div>
+                      <div className="h-3 w-3 animate-pulse rounded-full bg-primary"></div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Top Controls Bar */}
+                <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 to-transparent px-5 py-4 flex items-start justify-end opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleLike(); }}
+                    disabled={!isAuthenticated}
+                    className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition backdrop-blur ${
+                      liked
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-black/40 text-white hover:bg-white/20"
+                    } ${!isAuthenticated ? "cursor-not-allowed opacity-60" : ""}`}
+                    title={isAuthenticated ? "Like" : "Sign in to like"}
+                  >
+                    <ThumbsUp className={`h-4 w-4 ${liked ? "fill-current" : ""}`} />
+                    <span className="font-mono text-xs">{likeCount}</span>
+                  </button>
+                </div>
                 
                 {/* Big Play Button Overlay */}
                 {!isPlaying && (
@@ -246,33 +288,32 @@ function WatchPage() {
           {loading ? (
             <div className="mt-6 h-10 w-2/3 animate-pulse rounded bg-muted" />
           ) : video ? (
-            <div className="mt-6 border-b border-border pb-6">
-              <h1 className="font-display text-4xl italic leading-tight md:text-5xl">{video.Name}</h1>
-              <div className="mt-4 flex items-center justify-between gap-4">
+            <div className="mt-6 flex flex-col justify-between gap-4 border-b border-border pb-6 md:flex-row md:items-end">
+              <h1 className="font-display text-3xl leading-tight md:text-4xl lg:max-w-[65%]">{video.Name}</h1>
+              <div className="flex shrink-0 flex-wrap items-center gap-3 lg:justify-end lg:pb-1">
                 <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                  {formatViews(video.ViewCount)} views · {video.Resolution || "—"}
+                  {formatViews(video.ViewCount)} views
                 </p>
-                <button
-                  onClick={handleLike}
-                  disabled={!isAuthenticated}
-                  className={`group flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition ${
-                    liked
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-card text-foreground hover:border-primary/60 hover:text-primary"
-                  } ${!isAuthenticated ? "cursor-not-allowed opacity-60" : ""}`}
-                  title={isAuthenticated ? "Like" : "Sign in to like"}
-                >
-                  <span className={liked ? "" : "transition group-hover:scale-110"}>♥</span>
-                  <span className="font-mono text-xs">{likeCount}</span>
-                </button>
+                <span className="text-muted-foreground/30">•</span>
+                <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                  {video.Resolution || "—"}
+                </p>
+                {video.UploadedAt && (
+                  <>
+                    <span className="text-muted-foreground/30">•</span>
+                    <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                      {new Date(video.UploadedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           ) : null}
         </div>
 
-        <aside className="w-full flex-1 lg:w-[35%] xl:w-[30%]">
+        <aside className="w-full flex-1 lg:w-[50%] xl:w-[45%]">
           <p className="mb-5 font-mono text-[11px] uppercase tracking-[0.25em] text-primary">
-            // Up next
+            You Might Like
           </p>
           <div className="flex flex-col gap-5">
             {(recommendations ?? []).filter((r) => r.ID !== id).map((r) => (
