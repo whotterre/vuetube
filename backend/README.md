@@ -8,15 +8,17 @@ I started this mostly to figure out what DASH actually was — I'd seen `.m3u8` 
 ## Stack
 - Go + Gin
 - PostgreSQL (user/video metadata)
-- sqlc (generates the DB layer from raw SQL — really nice)
-- AWS S3 (video + thumbnail storage)
-- ffmpeg / ffprobe (metadata extraction, thumbnail generation)
+- sqlc (generates the DB layer from raw SQL)
+- Redis + Asynq (background video processing jobs)
+- AWS S3 (DASH manifests, media chunks, and thumbnails)
+- ffmpeg / ffprobe (metadata extraction, thumbnail generation, DASH packaging)
 
 ## Getting started
 
 You'll need:
 - Go 1.22+
 - PostgreSQL running somewhere
+- Redis running somewhere (Asynq uses this for the upload queue)
 - ffmpeg in your PATH (`ffprobe` needs to be findable)
 - sqlc if you're touching the DB queries (`go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`)
 
@@ -26,6 +28,7 @@ You'll need:
 DATABASE_URL=postgres://postgres:password@localhost:5432/vuetube
 JWT_SECRET=something-long-and-random
 PORT=:8000
+REDIS_ADDR=localhost:6379
 AWS_ACCESS_KEY_ID=your-key
 AWS_SECRET_ACCESS_KEY=your-secret
 AWS_REGION=us-east-1
@@ -58,15 +61,14 @@ sqlc generate
 
 ## Env vars
 
-| Variable | What it's for | Required? |
-|---|---|---|
-| `DATABASE_URL` | Postgres connection string | yes |
-| `JWT_SECRET` | Signs the JWTs | yes |
-| `PORT` | Which port to listen on | no (default `:8000`) |
-| `AWS_ACCESS_KEY_ID` | AWS creds | for uploads |
-| `AWS_SECRET_ACCESS_KEY` | AWS creds | for uploads |
-| `AWS_REGION` | Region your S3 bucket is in | for uploads |
-| `BUCKET_NAME` | S3 bucket for videos + thumbnails | for uploads |
+- `DATABASE_URL` - required. Postgres connection string.
+- `JWT_SECRET` - required. Used to sign JWTs.
+- `PORT` - optional, defaults to `:8000`. Controls which port the server listens on.
+- `REDIS_ADDR` - required. Redis address for Asynq jobs.
+- `AWS_ACCESS_KEY_ID` - required for uploads. AWS access key.
+- `AWS_SECRET_ACCESS_KEY` - required for uploads. AWS secret key.
+- `AWS_REGION` - required for uploads. Region your S3 bucket is in.
+- `BUCKET_NAME` - required for uploads. S3 bucket for DASH assets and thumbnails.
 
 ## Endpoints
 
@@ -102,17 +104,17 @@ Fields:
 - `video_file` — the actual video (up to 500 MB)
 - `title` — required
 
-What it does behind the scenes: runs ffprobe to get duration + resolution, uploads the video to S3, extracts a thumbnail from the second frame with ffmpeg, uploads that too, then saves everything to the DB.
+What it does behind the scenes: saves the upload to a temp file, creates a video row with `progress = 0`, enqueues an Asynq job, and returns immediately. The worker then runs ffprobe/ffmpeg, uploads the DASH assets and thumbnail to S3, and updates the DB row with the manifest URL.
 
-Response (200):
+Initial response (200):
 ```json
 {
   "ID": "a533793a-acaf-465a-90e6-fc1700ac743d",
   "Name": "my-video.mp4",
-  "S3Url": "https://<bucket>.s3.<region>.amazonaws.com/<hash>",
-  "ThumbnailUrl": "https://<bucket>.s3.<region>.amazonaws.com/thumb-<hash>",
-  "Duration": 16,
-  "Resolution": "1080p",
+  "S3Url": "",
+  "ThumbnailUrl": "",
+  "Duration": 0,
+  "Resolution": "",
   "Size": 6374470,
   "Progress": 0,
   "ViewCount": 0,
@@ -122,9 +124,77 @@ Response (200):
 }
 ```
 
+After the worker finishes, `S3Url` points at the DASH manifest:
+
+```json
+{
+  "S3Url": "https://<bucket>.s3.<region>.amazonaws.com/videos/<video-id>/dash/index.mpd",
+  "ThumbnailUrl": "https://<bucket>.s3.<region>.amazonaws.com/thumb-<video-id>",
+  "Duration": 16,
+  "Resolution": "1080p",
+  "Progress": 100
+}
+```
+
 ![Upload response](./docs/slow_upload_ep.png)
 
+**GET /videos/:id/dash/manifest** - returns a rewritten DASH manifest (`application/dash+xml`).
+
+The manifest is fetched from S3, validated as MPD XML, and rewritten so DASH init/media URLs point back through this backend:
+
+```text
+/videos/<id>/dash/segment/init-stream0.m4s
+/videos/<id>/dash/segment/chunk-stream0-00001.m4s
+```
+
+**GET /videos/:id/dash/segment/:filename** - streams one DASH asset from S3.
+
+Accepted filenames include:
+
+```text
+init.mp4
+init-stream0.mp4
+init-stream0.m4s
+chunk-00001.m4s
+chunk-stream0-00001.m4s
+```
+
 ## How the upload works
+
+Current flow:
+
+```text
+POST /videos/upload
+  -> RequireAuth middleware      validates JWT, stores claims in Gin context
+  -> VideoHandler                checks file size and required fields
+  -> VideoService
+      -> Save temp file          uploaded video goes to local temp storage
+      -> CreateVideo             record saved to Postgres with progress = 0
+      -> Enqueue Asynq job       returns to the client quickly
+
+Asynq worker
+  -> ExtractMetadata             ffprobe reads duration + resolution
+  -> ExtractThumbnail            ffmpeg grabs an early frame -> temp JPEG
+  -> Upload thumbnail            S3 key: thumb-<video-id>
+  -> Inspect audio streams       ffprobe checks whether audio exists
+  -> Package DASH                ffmpeg writes index.mpd + init-* + chunk-*
+  -> Upload DASH assets          S3 prefix: videos/<video-id>/dash/
+  -> UpdateVideoAfterProcessing  stores manifest URL, thumbnail URL, metadata, progress = 100
+```
+
+S3 keys are grouped by video ID:
+
+```text
+thumb-<video-id>
+videos/<video-id>/dash/index.mpd
+videos/<video-id>/dash/init-stream0.m4s
+videos/<video-id>/dash/chunk-stream0-00001.m4s
+videos/<video-id>/dash/chunk-stream1-00001.m4s
+```
+
+The DB `s3_url` stores the full URL for `index.mpd`, not the original uploaded video. The player loads that manifest, then requests init/chunk files through the backend segment proxy.
+
+Older synchronous flow, kept here for comparison:
 
 ```
 POST /videos/upload
@@ -144,21 +214,22 @@ Layer rules I tried to stick to:
 - Repositories are just DB access via sqlc
 - Middleware handles cross-cutting stuff (auth puts JWT claims in context under `"claims"`)
 
-S3 keys are `md5(filename)` for videos and `thumb-md5(filename)` for thumbnails — deterministic, so re-uploading the same filename just overwrites.
+The current S3 key layout is the video-ID grouped DASH layout shown above. Older notes about `md5(filename)` keys only applied before the async DASH worker was added.
 
 ## Known issues
 
-### It's slow
+### Video processing still needs production hardening
 
-Uploading a 6.7 MB file took ~25 seconds. The whole pipeline is synchronous — every step blocks until the previous one finishes:
+Uploads return quickly now, but transcoding is still handled by a local worker. For production, this should probably move to ECS/Fargate, EC2, or AWS MediaConvert rather than running long ffmpeg jobs inside the web process.
 
-```
-receive → temp file → ffprobe × 2 → S3 upload → temp file → ffmpeg → S3 upload → postgres → respond
-```
+Current limitations:
 
-The obvious fix is to accept the file, immediately return a job ID, and do all the heavy lifting in the background. The `progress` field on the video record exists for exactly this — the plan is to use [hibiken/asynq](https://github.com/hibiken/asynq) for the job queue so the client can poll status.
+- Only one video rendition is generated, so this is DASH chunking but not true adaptive bitrate yet.
+- No CDN layer; the backend proxies private S3 objects directly.
+- No detailed progress updates during transcoding; the record mostly moves from `0` to `100`.
+- Retry/idempotency is basic. A failed worker can leave partial DASH assets in S3.
 
-On switching to an async workflow, I was able to realize a response time ~200x faster than the previous.
+On switching to an async workflow, upload response time became much faster than the first synchronous version.
 ![Upload response after asynq](./docs/upload_after_asynq.png)
 
 ## Misc
@@ -234,9 +305,9 @@ The `NOT EXISTS (SELECT 1 FROM cross_pool)` guard means the fallback branch only
 
 ### Cold start
 
-New users launching the app for the first time have no seed video. A separate endpoint handles this:
+New users launching the app for the first time have no seed video. A separate endpoint should handle this:
 
-**GET /videos/feed** — no `:id` param, returns a generic popular/fresh feed ordered by `view_count DESC, uploaded_at DESC`.
+**Planned: GET /videos/feed** — no `:id` param, returns a generic popular/fresh feed ordered by `view_count DESC, uploaded_at DESC`.
 
 ### Tagging videos
 
@@ -251,13 +322,11 @@ VALUES ('<video-uuid>', 'gaming');
 
 Benchmarked with `EXPLAIN (ANALYZE, BUFFERS)` on a dev dataset (14 rows):
 
-| Metric | Value |
-|---|---|
-| Execution time | 0.185 ms |
-| Planning time | 0.657 ms |
-| Buffer hits | 12 (all from cache, zero disk I/O) |
-| Tag lookup | Index Only Scan on `video_category_pkey` |
-| Fallback path | Correctly skipped (`never executed`) |
+- Execution time: `0.185 ms`
+- Planning time: `0.657 ms`
+- Buffer hits: `12`, all from cache with zero disk I/O
+- Tag lookup: index-only scan on `video_category_pkey`
+- Fallback path: correctly skipped (`never executed`)
 
 The `Seq Scan on videos` is expected and optimal at small scale — the planner switches to an index scan once the table grows. When you have thousands of videos, add:
 
