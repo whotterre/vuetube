@@ -24,6 +24,8 @@ type VideoHandler interface {
 	ServeDashManifest(ctx *gin.Context)
 	ServeDashSegment(ctx *gin.Context)
 	GetGenericFeed(ctx *gin.Context)
+	ServeThumbnail(ctx *gin.Context)
+	GetVideo(ctx *gin.Context)
 }
 
 type videoHandler struct {
@@ -235,3 +237,57 @@ func (h *videoHandler) GetGenericFeed(ctx *gin.Context) {
 		"feed":    feed,
 	})
 }
+
+// ServeThumbnail fetches the thumbnail image for a video from S3 and proxies
+// it to the client. This keeps the S3 bucket private — the client never
+// receives a direct S3 URL.
+func (h *videoHandler) ServeThumbnail(ctx *gin.Context) {
+	videoID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid video id"})
+		return
+	}
+
+	body, err := h.videoService.GetThumbnail(ctx.Request.Context(), h.cfg, videoID)
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "not found"):
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		case strings.Contains(err.Error(), "not ready"):
+			ctx.JSON(http.StatusAccepted, gin.H{"error": "thumbnail not ready yet"})
+		default:
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	defer body.Close()
+
+	ctx.Header("Content-Type", "image/jpeg")
+	ctx.Header("Cache-Control", "public, max-age=86400")
+	ctx.Status(http.StatusOK)
+	io.Copy(ctx.Writer, body)
+}
+
+func (h *videoHandler) GetVideo(ctx *gin.Context) {
+	videoIdStr := ctx.Param("id")
+	if videoIdStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "missing video id"})
+		return
+	}
+
+	videoID, err := uuid.Parse(videoIdStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid video id"})
+		return
+	}
+
+	video, err := h.videoService.GetVideo(ctx.Request.Context(), videoID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, video)
+}
+
+

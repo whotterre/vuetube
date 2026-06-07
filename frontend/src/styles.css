@@ -1,0 +1,81 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap");
+
+@source "../src";
+
+@theme inline {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Syne", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+}
+
+:root {
+  --radius: 0.5rem;
+  /* VueTube — editorial dark, paper-on-ink with a crimson accent */
+  --background: oklch(0.14 0.005 60);
+  --foreground: oklch(0.96 0.01 80);
+  --card: oklch(0.18 0.006 60);
+  --card-foreground: oklch(0.96 0.01 80);
+  --muted: oklch(0.23 0.006 60);
+  --muted-foreground: oklch(0.68 0.015 75);
+  --primary: oklch(0.65 0.22 15);          /* vibrant crimson */
+  --primary-foreground: oklch(0.98 0.01 15);
+  --accent: oklch(0.65 0.22 15);
+  --accent-foreground: oklch(0.98 0.01 15);
+  --border: oklch(0.26 0.006 60);
+  --input: oklch(0.23 0.006 60);
+  --ring: oklch(0.65 0.22 15);
+  --destructive: oklch(0.62 0.21 25);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html, body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "cv11";
+  }
+  /* subtle paper grain */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: radial-gradient(rgba(255,255,255,0.6) 1px, transparent 1px);
+    background-size: 3px 3px;
+  }
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .font-mono, code, kbd {
+    font-family: var(--font-mono);
+  }
+}

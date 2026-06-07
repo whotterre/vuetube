@@ -33,13 +33,11 @@ type VideoService interface {
 	) (*db.Video, error)
 	ToggleLikeVideo(ctx context.Context, videoID, userID uuid.UUID) (bool, int64, error)
 	GetRecommendationFeed(ctx context.Context, limit int, videoId uuid.UUID) ([]db.GetCrossPoolRecommendationsRow, error)
-	// GetDashManifest fetches the MPD from S3, rewrites segment refs to proxy
-	// URLs on this backend, and returns the modified XML bytes.
 	GetDashManifest(ctx context.Context, cfg *config.Config, videoID uuid.UUID) ([]byte, error)
-	// GetDashSegment fetches a single DASH segment (init.mp4 or chunk-NNNNN.m4s)
-	// directly from S3 and returns the raw bytes for the handler to proxy.
 	GetDashSegment(ctx context.Context, cfg *config.Config, videoID uuid.UUID, filename string) (io.ReadCloser, error)
 	GetGenericFeed(ctx context.Context, limit int) ([]db.Video, error)
+	GetThumbnail(ctx context.Context, cfg *config.Config, videoID uuid.UUID) (io.ReadCloser, error)
+	GetVideo(ctx context.Context, videoID uuid.UUID) (*db.Video, error)
 }
 
 type videoService struct {
@@ -297,3 +295,31 @@ func (s *videoService) GetGenericFeed(ctx context.Context, limit int) ([]db.Vide
 	return s.videoRepository.GetGenericFeed(ctx, limit)
 }
 
+// GetThumbnail fetches the thumbnail for videoID directly from S3 and returns
+// the raw byte stream. The key format mirrors what the worker writes:
+// "thumb-<videoID>". The caller must close the returned ReadCloser.
+func (s *videoService) GetThumbnail(ctx context.Context, cfg *config.Config, videoID uuid.UUID) (io.ReadCloser, error) {
+	video, err := s.videoRepository.FindVideoByVideoID(ctx, videoID)
+	if err != nil {
+		return nil, fmt.Errorf("video not found: %w", err)
+	}
+	if video.ThumbnailUrl == "" {
+		return nil, fmt.Errorf("thumbnail not ready")
+	}
+
+	thumbKey := fmt.Sprintf("thumb-%s", videoID)
+	s3Helper := utils.NewS3Helper(ctx)
+	body, err := s3Helper.GetObject(ctx, cfg.BucketName, thumbKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch thumbnail: %w", err)
+	}
+	return body, nil
+}
+
+func (s *videoService) GetVideo(ctx context.Context, videoID uuid.UUID) (*db.Video, error) {
+	video, err := s.videoRepository.FindVideoByVideoID(ctx, videoID)
+	if err != nil {
+		return nil, fmt.Errorf("video not found: %w", err)
+	}
+	return video, nil
+}
