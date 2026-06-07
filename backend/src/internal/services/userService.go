@@ -71,7 +71,7 @@ func (s *userService) SignupUser(ctx *gin.Context, signUpData dto.SignupUserRequ
 		return nil, err
 	}
 
-	token, err := utils.GenerateToken(createdUser.ID, createdUser.Email, s.jwtSecret, 1*time.Hour)
+	token, err := utils.GenerateToken(createdUser.ID, createdUser.Email, s.jwtSecret, 24*time.Hour)
 	if err != nil {
 		return nil, err
 	}
