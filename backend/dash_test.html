@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>VueTube DASH Test - Fixed</title>
+  <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: monospace;
+      padding: 2rem;
+    }
+
+    input,
+    button {
+      padding: 0.5rem;
+      margin: 0.25rem 0;
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 1rem;
+    }
+
+    video {
+      width: 100%;
+      max-width: 900px;
+      margin-top: 1rem;
+      background: #000;
+    }
+
+    #log {
+      margin-top: 1rem;
+      background: #222;
+      padding: 1rem;
+      border-radius: 4px;
+      height: 200px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+    }
+
+    .err {
+      color: #f66;
+    }
+
+    .ok {
+      color: #6f6;
+    }
+
+    .warn {
+      color: #ffaa00;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>VueTube DASH Stream Tester (Fixed)</h2>
+
+  <label>JWT Token</label>
+  <input id="token" type="text" placeholder="Paste your Bearer token here (without 'Bearer ')" />
+
+  <label>Video ID</label>
+  <input id="videoId" type="text" placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000" />
+
+  <label>API Base URL</label>
+  <input id="baseUrl" type="text" value="http://localhost:8000" />
+
+  <button onclick="play()">▶ Play</button>
+
+  <video id="player" controls></video>
+
+  <div id="log"><span class="ok">[ready] Fill in token + video ID and hit Play.</span></div>
+
+  <script>
+    let player = null;
+
+    function log(msg, isErr = false, isWarn = false) {
+      const el = document.getElementById('log');
+      const line = document.createElement('div');
+      if (isErr) line.className = 'err';
+      else if (isWarn) line.className = 'warn';
+      else line.className = 'ok';
+      line.textContent = `[${new Date().toISOString().slice(11, 19)}] ${msg}`;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    async function play() {
+      const token = document.getElementById('token').value.trim();
+      const videoId = document.getElementById('videoId').value.trim();
+      const base = document.getElementById('baseUrl').value.trim();
+
+      if (!token || !videoId) {
+        log('Token and Video ID are required.', true);
+        return;
+      }
+
+      if (player) {
+        player.destroy();
+        player = null;
+      }
+
+      const manifestUrl = `${base}/videos/${videoId}/dash/manifest`;
+      log(`Loading manifest: ${manifestUrl}`);
+
+      // First, check if manifest exists
+      try {
+        const checkRes = await fetch(manifestUrl, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (checkRes.status === 500) {
+          const errorData = await checkRes.json();
+          log(`Server error: ${errorData.error || 'video has no stream URL'}`, true);
+          log('This means the video exists but hasn\'t been transcoded to DASH format yet.', true);
+          return;
+        }
+        
+        if (!checkRes.ok) {
+          log(`Manifest fetch failed with status ${checkRes.status}`, true);
+          return;
+        }
+        
+        log('Manifest exists, initializing player...');
+      } catch (err) {
+        log(`Cannot reach server: ${err.message}`, true);
+        return;
+      }
+
+      // Create player instance
+      player = dashjs.MediaPlayer().create();
+      
+      // Only use valid settings for this dash.js version
+      try {
+        player.updateSettings({
+          streaming: {
+            abr: {
+              autoSwitchBitrate: true
+            }
+          }
+        });
+      } catch(e) {
+        // Ignore settings errors
+        log(`Settings note: ${e.message}`, false, true);
+      }
+
+      // Add request interceptor for auth headers
+      player.addRequestInterceptor((req) => {
+        if (req.url && req.url.startsWith(base)) {
+          req.headers = req.headers || {};
+          req.headers['Authorization'] = `Bearer ${token}`;
+        }
+        return Promise.resolve(req);
+      });
+
+      // Event listeners
+      player.on(dashjs.MediaPlayer.events.ERROR, (e) => {
+        const error = e.error;
+        log(`ERROR: ${error.message || JSON.stringify(error)}`, true);
+        
+        // Specific handling for codec errors
+        if (error.message && error.message.includes('audio object type')) {
+          log('Codec mismatch: Video needs re-encoding with standard AAC', true);
+          log('Run: ffmpeg -i input.mp4 -c:v copy -c:a aac -b:a 128k output.mp4', false);
+        }
+      });
+
+      player.on(dashjs.MediaPlayer.events.MANIFEST_LOADED, () => {
+        log('Manifest loaded ✓');
+      });
+      
+      player.on(dashjs.MediaPlayer.events.CAN_PLAY, () => log('Can play ✓'));
+      player.on(dashjs.MediaPlayer.events.PLAYBACK_STARTED, () => log('Playback started ✓'));
+      player.on(dashjs.MediaPlayer.events.PLAYBACK_PAUSED, () => log('Playback paused'));
+      player.on(dashjs.MediaPlayer.events.PLAYBACK_ENDED, () => log('Playback ended ✓'));
+
+      // Initialize
+      try {
+        player.initialize(document.getElementById('player'), manifestUrl, true);
+      } catch (err) {
+        log(`Initialization failed: ${err.message}`, true);
+      }
+    }
+  </script>
+</body>
+
+</html>

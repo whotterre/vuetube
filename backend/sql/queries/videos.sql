@@ -56,5 +56,14 @@ UNION ALL
 )
 LIMIT $2;
 
+
 -- name: IncrementViewCount :exec
 UPDATE "videos" SET view_count = view_count + 1 WHERE id = $1;
+
+-- name: GetGenericFeed :many
+SELECT * FROM videos
+WHERE progress > 0
+ORDER BY view_count DESC, uploaded_at DESC
+LIMIT $1;
+
+
